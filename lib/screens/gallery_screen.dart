@@ -117,8 +117,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
             padding: EdgeInsets.zero,
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 3,
-              mainAxisSpacing: 0,
-              crossAxisSpacing: 0,
+              mainAxisSpacing: 2,
+              crossAxisSpacing: 2,
               childAspectRatio: 1, // 正方形グリッド
             ),
             itemCount: gp.assets.length,
