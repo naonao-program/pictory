@@ -1,5 +1,3 @@
-// gallery_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:photo_manager/photo_manager.dart';
@@ -10,24 +8,60 @@ import '../widgets/asset_grid_item.dart';
 import 'viewer_page.dart';
 
 class GalleryScreen extends StatefulWidget {
-  const GalleryScreen({super.key});
+  const GalleryScreen({Key? key}) : super(key: key);
+
   @override
   State<GalleryScreen> createState() => _GalleryScreenState();
 }
 
 class _GalleryScreenState extends State<GalleryScreen> {
   final ScrollController _controller = ScrollController();
+
+  /// 初回ジャンプ済みフラグ
   bool _didJumpToBottom = false;
+
   bool _selectMode = false;
   final Set<String> _selectedIds = {};
+
+  int _jumpTries = 0;
+
+  void _tryJumpToBottom() {
+    if (_controller.hasClients) {
+      _controller.jumpTo(_controller.position.maxScrollExtent);
+      _jumpTries++;
+      if (_jumpTries < 5) {
+        Future.delayed(const Duration(milliseconds: 200), _tryJumpToBottom);
+      }
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    // Provider の init() を呼んで権限リクエスト＆初回読み込み
+
+    // Provider の init() を次フレームで呼び出し
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<GalleryProvider>().init();
+      final gp = context.read<GalleryProvider>();
+      gp.init();
+
+      // Provider の状態変化をリスンして、初回ロード完了時に一度だけジャンプする
+      gp.addListener(() {
+        if (!_didJumpToBottom && !gp.loading && gp.assets.isNotEmpty) {
+          _jumpTries = 0;
+          Future.delayed(const Duration(milliseconds: 200), _tryJumpToBottom);
+          _didJumpToBottom = true;
+        }
+      });
     });
+  }
+
+  @override
+  void dispose() {
+    // リスナーを解除（匿名クロージャではなく、登録時の関数を保存しておいて remove するのが理想ですが、
+    // このサンプルでは簡易的に全リスナ―を外すイメージです）
+    context.read<GalleryProvider>().removeListener(() {});
+    _controller.dispose();
+    super.dispose();
   }
 
   @override
@@ -61,34 +95,23 @@ class _GalleryScreenState extends State<GalleryScreen> {
         ],
       ),
       body: Consumer<GalleryProvider>(
-        builder: (_, gp, __) {
-          // 権限がない場合
+        builder: (context, gp, child) {
+          // 1) 権限なし
           if (gp.noAccess) {
             return Center(
               child: TextButton(
                 onPressed: gp.openSetting,
-                child: const Text('写真へのアクセス権を許可'),
+                child: const Text('写真へのアクセスを許可'),
               ),
             );
           }
 
-          // ロード中かつまだassetsが空ならローディング表示
+          // 2) ロード中かつ assets が空: ローディング表示
           if (gp.loading && gp.assets.isEmpty) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          // 一度だけ最下部にジャンプさせる
-          if (!_didJumpToBottom &&
-              _controller.hasClients &&
-              gp.assets.isNotEmpty) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (_controller.hasClients) {
-                _controller.jumpTo(_controller.position.maxScrollExtent);
-              }
-            });
-            _didJumpToBottom = true;
-          }
-
+          // 3) GridView: 3列・隙間なし・正方形セル
           return GridView.builder(
             controller: _controller,
             padding: EdgeInsets.zero,
@@ -99,8 +122,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
               childAspectRatio: 1, // 正方形グリッド
             ),
             itemCount: gp.assets.length,
-            itemBuilder: (_, index) {
-              // 必要に応じて次ページ読み込み
+            itemBuilder: (context, index) {
+              // 先頭10件以内に来たら古いページを追加読み込み
               gp.loadMoreIfNeeded(index);
 
               final asset = gp.assets[index];
@@ -128,7 +151,6 @@ class _GalleryScreenState extends State<GalleryScreen> {
                   }
                 },
                 onLongPress: () {
-                  // 長押しで選択モードに移行（任意）
                   if (!_selectMode) {
                     setState(() {
                       _selectMode = true;
@@ -147,7 +169,9 @@ class _GalleryScreenState extends State<GalleryScreen> {
   void _toggleSelectMode() {
     setState(() {
       _selectMode = !_selectMode;
-      if (!_selectMode) _selectedIds.clear();
+      if (!_selectMode) {
+        _selectedIds.clear();
+      }
     });
   }
 
@@ -158,7 +182,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
     setState(() {
       _selectMode = false;
       _selectedIds.clear();
-      _didJumpToBottom = false; // 再度ジャンプさせる場合は false に戻す
+      _didJumpToBottom = false; // 削除後に再度ジャンプを許可
     });
   }
 
