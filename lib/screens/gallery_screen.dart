@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../providers/gallery_provider.dart';
 import '../widgets/asset_grid_item.dart';
@@ -188,13 +189,21 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
   Future<void> _onShare() async {
     if (_selectedIds.isEmpty) return;
+
     final assets = context
         .read<GalleryProvider>()
         .assets
         .where((a) => _selectedIds.contains(a.id));
     final files = await Future.wait(assets.map((a) => a.file));
     final paths = files.where((f) => f != null).map((f) => f!.path).toList();
-    final xFiles = paths.map((p) => XFile(p)).toList();
-    Share.shareXFiles(xFiles);
+
+    if (paths.isNotEmpty) {
+      await SharePlus.instance.share(
+        ShareParams(
+          text: '共有します',
+          files: paths.map((path) => XFile(path)).toList(),
+        ),
+      );
+    }
   }
 }
