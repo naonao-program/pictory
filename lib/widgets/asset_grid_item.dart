@@ -23,6 +23,15 @@ class AssetGridItem extends StatelessWidget {
     this.onLongPress,
   }) : super(key: key);
 
+  // 秒数を「M:SS」形式の文字列にフォーマットするヘルパー関数
+  String _formatDuration(int totalSeconds) {
+    final duration = Duration(seconds: totalSeconds);
+    final minutes = duration.inMinutes.toString();
+    // 秒数が一桁の場合、先頭に '0' を付けて2桁にする (例: 7 -> "07")
+    final seconds = (duration.inSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -30,6 +39,7 @@ class AssetGridItem extends StatelessWidget {
       onLongPress: onLongPress,
       child: Stack(
         children: [
+          // 1. サムネイル画像
           Positioned.fill(
             child: AssetEntityImage(
               asset,
@@ -38,6 +48,43 @@ class AssetGridItem extends StatelessWidget {
               fit: BoxFit.cover, // パツパツに表示
             ),
           ),
+          // 2. 動画の場合のオーバーレイ表示
+          if (asset.type == AssetType.video)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              // iOS風の黒いグラデーション
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [Colors.black54, Colors.transparent],
+                ),
+              ),
+              padding: const EdgeInsets.fromLTRB(6, 8, 6, 6),
+              child: Row(
+                children: [
+                  // Spacerを先頭に配置し、後続のウィジェットをすべて右端に寄せる
+                  const Spacer(), 
+                  // ビデオアイコン
+                  const Icon(Icons.videocam_rounded, color: Colors.white, size: 16),
+                  const SizedBox(width: 4),
+                  // フォーマットされた再生時間
+                  Text(
+                    _formatDuration(asset.duration),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // 3. 選択中のチェックマーク表示
           if (isSelected)
             Positioned(
               top: 4,

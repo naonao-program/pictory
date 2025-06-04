@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:share_plus/share_plus.dart';
@@ -53,12 +54,12 @@ class _GalleryScreenState extends State<GalleryScreen> {
         // !gp.loading: Providerがロード中でないことを確認
         // !_didJumpToBottom: まだジャンプしていないことを確認
         // gp.assets.isNotEmpty: 写真データが1件以上あることを確認
-        if (mounted && !gp.loading && !_didJumpToBottom && gp.assets.isNotEmpty) {
-          _jumpTries = 0; // 試行回数をリセット
-          // 少し遅延させてからジャンプ処理を実行（UIの描画が安定するのを待つ）
-          Future.delayed(const Duration(milliseconds: 200), _tryJumpToBottom);
-          _didJumpToBottom = true; // ジャンプ済みフラグを立てる
-        }
+        SchedulerBinding.instance.endOfFrame.then((_) {
+          if (mounted) {
+            _controller.jumpTo(_controller.position.maxScrollExtent);
+            _didJumpToBottom = true; // ジャンプ済みフラグを立てる
+          }
+        });
       });
     });
   }

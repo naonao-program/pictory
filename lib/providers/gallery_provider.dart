@@ -52,7 +52,7 @@ class GalleryProvider extends ChangeNotifier {
 
     // 2) "すべての写真" のパスを取得（作成日を昇順でソート）
     final List<AssetPathEntity> paths = await PhotoManager.getAssetPathList(
-      type: RequestType.image,
+      type: RequestType.common,
       onlyAll: true,
       filterOption: FilterOptionGroup(
         orders: [
