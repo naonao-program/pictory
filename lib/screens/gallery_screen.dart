@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../providers/gallery_provider.dart';
 import '../widgets/asset_grid_item.dart';
@@ -17,37 +16,22 @@ class GalleryScreen extends StatefulWidget {
 
 class _GalleryScreenState extends State<GalleryScreen> {
   final ScrollController _controller = ScrollController();
-
-  /// 初回ジャンプ済みフラグ
   bool _didJumpToBottom = false;
-
   bool _selectMode = false;
   final Set<String> _selectedIds = {};
-
   int _jumpTries = 0;
+  int _bottomNavIndex = 0; // ボトムナビゲーションの現在のインデックス
 
-  void _tryJumpToBottom() {
-    if (_controller.hasClients) {
-      _controller.jumpTo(_controller.position.maxScrollExtent);
-      _jumpTries++;
-      if (_jumpTries < 5) {
-        Future.delayed(const Duration(milliseconds: 200), _tryJumpToBottom);
-      }
-    }
-  }
-
+  // 初期化処理（変更なし）
   @override
   void initState() {
     super.initState();
-
-    // Provider の init() を次フレームで呼び出し
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final gp = context.read<GalleryProvider>();
       gp.init();
 
-      // Provider の状態変化をリスンして、初回ロード完了時に一度だけジャンプする
       gp.addListener(() {
-        if (!_didJumpToBottom && !gp.loading && gp.assets.isNotEmpty) {
+        if (mounted && !gp.loading && !_didJumpToBottom && gp.assets.isNotEmpty) {
           _jumpTries = 0;
           Future.delayed(const Duration(milliseconds: 200), _tryJumpToBottom);
           _didJumpToBottom = true;
@@ -58,113 +42,154 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
   @override
   void dispose() {
-    // リスナーを解除（匿名クロージャではなく、登録時の関数を保存しておいて remove するのが理想ですが、
-    // このサンプルでは簡易的に全リスナ―を外すイメージです）
     context.read<GalleryProvider>().removeListener(() {});
     _controller.dispose();
     super.dispose();
   }
 
+  void _tryJumpToBottom() {
+    if (_controller.hasClients && _controller.position.hasContentDimensions) {
+      _controller.jumpTo(_controller.position.maxScrollExtent);
+    } else if (_jumpTries < 5) {
+      _jumpTries++;
+      Future.delayed(const Duration(milliseconds: 200), _tryJumpToBottom);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    // テーマに合わせてバーの背景色を半透明にする
+    final barBackgroundColor = Theme.of(context).brightness == Brightness.light
+        ? Colors.grey.shade100.withOpacity(0.8)
+        : Colors.black.withOpacity(0.7);
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          _selectMode
-              ? '${_selectedIds.length} selected'
-              : 'Pictory',
-        ),
-        actions: [
-          if (_selectMode) ...[
-            IconButton(
-              icon: const Icon(Icons.delete),
-              onPressed: _onDelete,
-            ),
-            IconButton(
-              icon: const Icon(Icons.share),
-              onPressed: _onShare,
-            ),
-            IconButton(
-              icon: const Icon(Icons.close),
-              onPressed: _toggleSelectMode,
-            ),
-          ] else
-            IconButton(
-              icon: const Icon(Icons.select_all),
-              onPressed: _toggleSelectMode,
-            ),
-        ],
-      ),
+      // ★変更点1: ボトムバーを選択モードに応じて切り替え
+      bottomNavigationBar: _selectMode
+          ? _buildSelectModeBottomBar(context)
+          : _buildNormalModeBottomBar(),
       body: Consumer<GalleryProvider>(
         builder: (context, gp, child) {
-          // 1) 権限なし
           if (gp.noAccess) {
-            return Center(
-              child: TextButton(
-                onPressed: gp.openSetting,
-                child: const Text('写真へのアクセスを許可'),
-              ),
-            );
+            return Center(child: TextButton(onPressed: gp.openSetting, child: const Text('写真へのアクセスを許可')));
           }
-
-          // 2) ロード中かつ assets が空: ローディング表示
           if (gp.loading && gp.assets.isEmpty) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          // 3) GridView: 3列・隙間なし・正方形セル
-          return GridView.builder(
+          // ★変更点2: BodyをCustomScrollViewに変更し、SliverAppBarとSliverGridを配置
+          return CustomScrollView(
             controller: _controller,
-            padding: EdgeInsets.zero,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
-              mainAxisSpacing: 2,
-              crossAxisSpacing: 2,
-              childAspectRatio: 1, // 正方形グリッド
-            ),
-            itemCount: gp.assets.length,
-            itemBuilder: (context, index) {
-              // 先頭10件以内に来たら古いページを追加読み込み
-              gp.loadMoreIfNeeded(index);
-
-              final asset = gp.assets[index];
-              final isSelected = _selectedIds.contains(asset.id);
-
-              return AssetGridItem(
-                asset: asset,
-                isSelected: isSelected,
-                onTap: () {
-                  if (_selectMode) {
-                    setState(() {
-                      if (isSelected) {
-                        _selectedIds.remove(asset.id);
-                      } else {
-                        _selectedIds.add(asset.id);
-                      }
-                    });
-                  } else {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ViewerPage(asset: asset),
-                      ),
-                    );
-                  }
-                },
-                onLongPress: () {
-                  if (!_selectMode) {
-                    setState(() {
-                      _selectMode = true;
-                      _selectedIds.add(asset.id);
-                    });
-                  }
-                },
-              );
-            },
+            slivers: [
+              SliverAppBar(
+                title: Text(_selectMode ? 'Select Items' : 'All Photos'),
+                centerTitle: true,
+                pinned: true,
+                floating: true,
+                elevation: 0,
+                backgroundColor: barBackgroundColor,
+                actions: [
+                  TextButton(
+                    onPressed: _toggleSelectMode,
+                    child: Text(_selectMode ? 'Cancel' : 'Select'),
+                  ),
+                ],
+              ),
+              // ★変更点3: GridViewをSliverGridに変更し、上下左右に1pxの余白を追加
+              SliverPadding(
+                padding: const EdgeInsets.all(1.0),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    mainAxisSpacing: 1,
+                    crossAxisSpacing: 1,
+                    childAspectRatio: 1,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      gp.loadMoreIfNeeded(index);
+                      final asset = gp.assets[index];
+                      final isSelected = _selectedIds.contains(asset.id);
+                      return AssetGridItem(
+                        asset: asset,
+                        isSelected: isSelected,
+                        onTap: () => _onItemTap(asset, isSelected),
+                        onLongPress: () => _onItemLongPress(asset),
+                      );
+                    },
+                    childCount: gp.assets.length,
+                  ),
+                ),
+              ),
+            ],
           );
         },
       ),
     );
+  }
+
+  // 通常時のボトムタブバー
+  Widget _buildNormalModeBottomBar() {
+    return BottomNavigationBar(
+      currentIndex: _bottomNavIndex,
+      onTap: (index) => setState(() => _bottomNavIndex = index),
+      type: BottomNavigationBarType.fixed,
+      items: const [
+        BottomNavigationBarItem(icon: Icon(Icons.photo_library), label: 'All Photos'),
+        BottomNavigationBarItem(icon: Icon(Icons.star_outline), label: 'For You'),
+        BottomNavigationBarItem(icon: Icon(Icons.collections_outlined), label: 'Albums'),
+        BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
+      ],
+    );
+  }
+
+  // 選択モード時のボトムバー
+  Widget _buildSelectModeBottomBar(BuildContext context) {
+    return BottomAppBar(
+      child: SafeArea(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.share_outlined),
+              tooltip: 'Share',
+              onPressed: _selectedIds.isNotEmpty ? _onShare : null,
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: 'Delete',
+              onPressed: _selectedIds.isNotEmpty ? _onDelete : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _onItemTap(AssetEntity asset, bool isSelected) {
+    if (_selectMode) {
+      setState(() {
+        if (isSelected) {
+          _selectedIds.remove(asset.id);
+        } else {
+          _selectedIds.add(asset.id);
+        }
+      });
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => ViewerPage(asset: asset)),
+      );
+    }
+  }
+
+  void _onItemLongPress(AssetEntity asset) {
+    if (!_selectMode) {
+      setState(() {
+        _selectMode = true;
+        _selectedIds.add(asset.id);
+      });
+    }
   }
 
   void _toggleSelectMode() {
@@ -183,27 +208,17 @@ class _GalleryScreenState extends State<GalleryScreen> {
     setState(() {
       _selectMode = false;
       _selectedIds.clear();
-      _didJumpToBottom = false; // 削除後に再度ジャンプを許可
+      _didJumpToBottom = false;
     });
   }
 
   Future<void> _onShare() async {
     if (_selectedIds.isEmpty) return;
-
-    final assets = context
-        .read<GalleryProvider>()
-        .assets
-        .where((a) => _selectedIds.contains(a.id));
+    final assets = context.read<GalleryProvider>().assets.where((a) => _selectedIds.contains(a.id));
     final files = await Future.wait(assets.map((a) => a.file));
     final paths = files.where((f) => f != null).map((f) => f!.path).toList();
-
     if (paths.isNotEmpty) {
-      await SharePlus.instance.share(
-        ShareParams(
-          text: '共有します',
-          files: paths.map((path) => XFile(path)).toList(),
-        ),
-      );
+      await Share.shareXFiles(paths.map((path) => XFile(path)).toList());
     }
   }
 }

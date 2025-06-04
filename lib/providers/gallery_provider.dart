@@ -90,9 +90,14 @@ class GalleryProvider extends ChangeNotifier {
   /// スクロール位置に応じて、さらに古いページを読み込むかチェック
   void loadMoreIfNeeded(int index) {
     if (!_hasMore || _loading) return;
-    // “先頭 10 件以内” に来たら次の古いページを取得
-    if (index <= 10) {
-      _loadPage();
+    
+    // スクロール速度に応じて読み込みを制御
+    // 先頭20件以内に来たら次の古いページを取得
+    if (index <= 20) {
+      // 読み込み中の場合は新しい読み込みを開始しない
+      if (!_loading) {
+        _loadPage();
+      }
     }
   }
 
@@ -125,7 +130,7 @@ class GalleryProvider extends ChangeNotifier {
       // 初回：最新ページ分をそのまま _assets に入れる
       _assets.addAll(pageList);
     } else {
-      // 追加読み込み：古いページを “先頭” に挿入する
+      // 追加読み込み：古いページを "先頭" に挿入する
       _assets.insertAll(0, pageList);
     }
 
