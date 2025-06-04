@@ -1,5 +1,5 @@
 /* 
- *四角の枠
+ * 四角の枠を表示するウィジェット
 */
 
 import 'package:flutter/material.dart';
