@@ -1,20 +1,18 @@
 /* 
- *プレースホルダーを 1 行で使うためのラッパー。
- *画像と同じ「真四角」の箱を Shimmer させて
- *「ここに写真が来るよ！」とユーザーに示す。
+ * 四角の枠を表示するウィジェット
 */
+
 import 'package:flutter/material.dart';
-import 'package:shimmer/shimmer.dart';
 
 class ShimmerPlaceholder extends StatelessWidget {
-  const ShimmerPlaceholder({super.key});
+  const ShimmerPlaceholder({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return Shimmer.fromColors(
-      baseColor: Colors.grey.shade300,
-      highlightColor: Colors.grey.shade100,
-      child: Container(color: Colors.grey),
+    // ここでは簡易的にグレーのボックスを配置するだけ
+    return Container(
+      color: Colors.grey.shade300,
     );
   }
 }
+
