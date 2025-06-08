@@ -36,6 +36,9 @@ class _GalleryScreenState extends State<GalleryScreen> {
   /// ボトムナビゲーションバーで選択されているタブのインデックス
   int _bottomNavIndex = 0;
 
+  // 初回スクロール専用のリスナーを保持する変数
+  late final VoidCallback _initialScrollListener;
+
   // --- Lifecycle Methods ---
 
   /// ウィジェットが初期化されるときに一度だけ呼ばれる
@@ -46,6 +49,31 @@ class _GalleryScreenState extends State<GalleryScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Providerを取得してデータの初期化を開始
       final gp = context.read<GalleryProvider>();
+
+      _initialScrollListener = () {
+        // ロードが完了し、アセットが存在する場合のみ実行
+        if (mounted && !gp.loading && gp.assets.isNotEmpty) {
+          // ★重要：一度きりの役目を終えたので、リスナー自身をすぐに解除する
+          gp.removeListener(_initialScrollListener);
+
+          // UIの描画完了を待ってからスクロールを実行
+          SchedulerBinding.instance.endOfFrame.then((_) {
+            if (mounted) {
+              // 1. まず一度、一番下へスクロールする
+              _controller.jumpTo(_controller.position.maxScrollExtent);
+
+              // 2. 補正スクロール：ごく僅かな時間（0.1秒）をおいて、再度一番下へスクロール
+              // これにより、レイアウト計算のズレを吸収し、確実に最下部へ移動します。
+              Future.delayed(const Duration(milliseconds: 100), () {
+                if (mounted) {
+                  _controller.jumpTo(_controller.position.maxScrollExtent);
+                }
+              });
+            }
+          });
+        }
+      };
+
       gp.init();
 
       // Providerの状態変化を監視するリスナーを登録
@@ -67,9 +95,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
   /// ウィジェットが破棄されるときに呼ばれる
   @override
   void dispose() {
-    // リスナーを解除してメモリリークを防ぐ
-    context.read<GalleryProvider>().removeListener(() {});
-    // コントローラーを破棄してメモリリークを防ぐ
+    // ウィジェットが破棄される際にも、念のためリスナーを解除します
+    context.read<GalleryProvider>().removeListener(_initialScrollListener);
     _controller.dispose();
     super.dispose();
   }
@@ -191,25 +218,26 @@ class _GalleryScreenState extends State<GalleryScreen> {
   /// 選択モード時のボトムバーを構築する
   Widget _buildSelectModeBottomBar(BuildContext context) {
     return BottomAppBar(
-      child: SafeArea( // iPhoneのノッチなどを避ける
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween, // 両端に寄せる
-          children: [
-            // 共有ボタン
-            IconButton(
-              icon: const Icon(Icons.share_outlined),
-              tooltip: 'Share',
-              // 1件以上選択されている場合のみ押せるようにする
-              onPressed: _selectedIds.isNotEmpty ? _onShare : null,
-            ),
-            // 削除ボタン
-            IconButton(
-              icon: const Icon(Icons.delete_outline),
-              tooltip: 'Delete',
-              // 1件以上選択されている場合のみ押せるようにする
-              onPressed: _selectedIds.isNotEmpty ? _onDelete : null,
-            ),
-          ],
+      height: 57.0,
+      child: SafeArea(
+        child: Padding(
+          // RowをPaddingで囲み、左右に余白を追加します。
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.share_outlined),
+                tooltip: 'Share',
+                onPressed: _selectedIds.isNotEmpty ? _onShare : null,
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline),
+                tooltip: 'Delete',
+                onPressed: _selectedIds.isNotEmpty ? _onDelete : null,
+              ),
+            ],
+          ),
         ),
       ),
     );
