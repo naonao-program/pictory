@@ -67,14 +67,15 @@ class _VideoViewerViewState extends State<VideoViewerView> {
             );
           },
         ),
-        // プログレスバー（シークバー）
+        // プログレスバーをビデオプレーヤーの下部に配置
         Positioned(
-          bottom: 10,
-          left: 10,
-          right: 10,
+          bottom: 70,
+          left: 0,
+          right: 0,
           child: VideoProgressIndicator(
             _controller!,
             allowScrubbing: true,
+            padding: const EdgeInsets.all(8.0), // 余白を追加
             colors: const VideoProgressColors(
               playedColor: Colors.white,
               bufferedColor: Colors.grey,

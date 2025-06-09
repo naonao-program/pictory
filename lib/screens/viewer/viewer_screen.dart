@@ -76,14 +76,16 @@ class _ViewerScreenState extends State<ViewerScreen> {
       if (widget.assets.length <= 1) {
         Navigator.of(context).pop();
       } else {
-        // 削除されたので、現在のリストから該当アセットを削除してUIを更新
+        // 削除後の画面遷移処理
+        final newIndex = (_currentIndex - 1).clamp(0, widget.assets.length - 2);
         setState(() {
+          // 削除されたので、現在のリストから該当アセットを削除
           widget.assets.removeAt(_currentIndex);
-          // インデックスがリストの末尾を超えないように調整
-          if (_currentIndex >= widget.assets.length) {
-            _currentIndex = widget.assets.length - 1;
-          }
+          // 新しいインデックスに更新
+          _currentIndex = newIndex;
         });
+        // 前のページにアニメーションなしで遷移
+        _pageController.jumpToPage(newIndex);
       }
     }
   }

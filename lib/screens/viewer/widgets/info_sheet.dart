@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 class InfoSheet extends StatelessWidget {
@@ -8,7 +9,9 @@ class InfoSheet extends StatelessWidget {
   const InfoSheet({super.key, required this.asset});
   
   // このシートを表示するための静的メソッド
-  static void show(BuildContext context, AssetEntity asset) {
+  static void show(BuildContext context, AssetEntity asset) async {
+    // 日付フォーマットのために日本語ロケールを初期化
+    await initializeDateFormatting('ja_JP');
     showModalBottomSheet(
       context: context,
       isScrollControlled: true, // 高さを自由に設定可能に
