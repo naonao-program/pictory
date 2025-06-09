@@ -6,7 +6,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../providers/gallery_provider.dart';
 import '../widgets/asset_grid_item.dart';
-import 'viewer_page.dart';
+import 'viewer/viewer_screen.dart';
 
 class GalleryScreen extends StatefulWidget {
   const GalleryScreen({Key? key}) : super(key: key);
@@ -271,7 +271,13 @@ class _GalleryScreenState extends State<GalleryScreen> {
       // 通常モードの場合：写真ビューワー画面に遷移
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => ViewerPage(asset: asset)),
+        MaterialPageRoute(
+          builder: (_) => ViewerScreen(
+            // タップされたアセットのインデックスと、現在読み込まれている全アセットのリストを渡す
+            assets: context.read<GalleryProvider>().assets,
+            initialIndex: context.read<GalleryProvider>().assets.indexOf(asset),
+          ),
+        ),
       );
     }
   }
