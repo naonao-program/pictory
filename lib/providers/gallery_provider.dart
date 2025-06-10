@@ -91,12 +91,12 @@ class GalleryProvider extends ChangeNotifier {
   void loadMoreIfNeeded(int index) {
     if (!_hasMore || _loading) return;
     
-    // スクロール速度に応じて読み込みを制御
-    // 先頭20件以内に来たら次の古いページを取得
     if (index <= 20) {
-      // 読み込み中の場合は新しい読み込みを開始しない
       if (!_loading) {
-        _loadPage();
+        // _loadPageの完了後に、ここで明示的にUI更新を通知する
+        _loadPage().then((_) {
+          notifyListeners();
+        });
       }
     }
   }
@@ -105,9 +105,12 @@ class GalleryProvider extends ChangeNotifier {
   Future<void> _loadPage({bool reset = false}) async {
     if (_loading || _allPhotosPath == null || _currentPage == null) return;
     _loading = true;
+    // reset時にはnotifyListenersを呼ぶので、ここでは呼ばない
+    if (!reset) {
+      notifyListeners();
+    }
 
     if (reset) {
-      // 初回読み込み／リフレッシュ時
       _assets.clear();
       _hasMore = true;
     }
@@ -118,30 +121,23 @@ class GalleryProvider extends ChangeNotifier {
       size: _pageSize,
     );
 
-    // 「最古（page=0）に到達したら、これ以上古いページはない」
     if (pageToLoad == 0) {
       _hasMore = false;
     } else {
-      // pageToLoad > 0 ならまだ古いページが残っている
       _hasMore = true;
     }
 
     if (reset) {
-      // 初回：最新ページ分をそのまま _assets に入れる
       _assets.addAll(pageList);
     } else {
-      // 追加読み込み：古いページを "先頭" に挿入する
       _assets.insertAll(0, pageList);
     }
 
-    // 次に読むべきページ番号を「ひとつ古いもの」にデクリメント
     _currentPage = pageToLoad - 1;
     _loading = false;
-
-    // ビルド中の notify を回避するため、次フレームで一度だけ通知
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      notifyListeners();
-    });
+    
+    // addPostFrameCallbackを削除し、呼び出し元でnotifyListenersを呼ぶようにする
+    // これによりUI更新のタイミングが明確になる
   }
 
   /// 全件リフレッシュ（例：削除後などに呼ぶ）
@@ -152,6 +148,33 @@ class GalleryProvider extends ChangeNotifier {
     _hasMore = true;
     await _loadPage(reset: true);
     // すぐに Consumer へ更新を伝える
+    notifyListeners();
+  }
+  /// まだ読み込んでいないアセットを全て読み込む
+  Future<void> loadAllRemainingAssets() async {
+    // すでに全件読み込み済み、または読み込み中は何もしない
+    if (!_hasMore || _loading) return;
+
+    _loading = true;
+    notifyListeners();
+
+    // 現在のページから最古(0)のページまでループで取得
+    while (_hasMore && _currentPage != null && _currentPage! >= 0) {
+      final int pageToLoad = _currentPage!;
+      final List<AssetEntity> pageList = await _allPhotosPath!.getAssetListPaged(
+        page: pageToLoad,
+        size: _pageSize,
+      );
+      
+      _assets.insertAll(0, pageList);
+
+      if (pageToLoad == 0) {
+        _hasMore = false;
+      }
+      _currentPage = pageToLoad - 1;
+    }
+
+    _loading = false;
     notifyListeners();
   }
 }
