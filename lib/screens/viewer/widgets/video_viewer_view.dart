@@ -16,6 +16,7 @@ class VideoViewerView extends StatefulWidget {
 class _VideoViewerViewState extends State<VideoViewerView> {
   VideoPlayerController? _controller;
   bool _isScrubbing = false;
+  double _scrubPosition = 0.0;  // スクラブ中の一時的な位置を保持
 
   @override
   void initState() {
@@ -30,6 +31,7 @@ class _VideoViewerViewState extends State<VideoViewerView> {
       ..initialize().then((_) {
         setState(() {}); // UIを更新して再生ボタンなどを表示
         _controller?.play(); // 自動再生
+        _controller?.setLooping(true); // ループ再生を有効
       });
   }
 
@@ -51,14 +53,17 @@ class _VideoViewerViewState extends State<VideoViewerView> {
       return const Center(child: CircularProgressIndicator());
     }
 
+    // null チェック後に非 null を保証するローカル変数
+    final controller = _controller!;
+
     return Stack(
       alignment: Alignment.center,
       children: [
         // ビデオ表示
         Center(
           child: AspectRatio(
-            aspectRatio: _controller!.value.aspectRatio,
-            child: VideoPlayer(_controller!),
+            aspectRatio: controller.value.aspectRatio,
+            child: VideoPlayer(controller),
           ),
         ),
         // 再生/一時停止ボタン
@@ -72,7 +77,11 @@ class _VideoViewerViewState extends State<VideoViewerView> {
               icon: Icon(value.isPlaying ? Icons.pause_circle : Icons.play_circle),
               onPressed: () {
                 setState(() {
-                  value.isPlaying ? _controller?.pause() : _controller?.play();
+                  if (value.isPlaying) {
+                    controller.pause();
+                  } else {
+                    controller.play();
+                  }
                 });
               },
             );
@@ -100,30 +109,34 @@ class _VideoViewerViewState extends State<VideoViewerView> {
                       ),
                       Expanded(
                         child: Slider(
-                          value: value.position.inSeconds.toDouble(),
+                          // ドラッグ中はスクラブ位置を表示、通常時は再生位置を表示
+                          value: _isScrubbing
+                              ? _scrubPosition
+                              : controller.value.position.inSeconds.toDouble(),
                           min: 0.0,
-                          max: value.duration.inSeconds.toDouble(),
-                          onChanged: (value) {
-                             // ドラッグ中は再生位置のみ更新
-                            _controller?.seekTo(Duration(seconds: value.toInt()));
-                          },
-                          onChangeStart: (value) {
-                            // 操作開始時に動画を一時停止
+                          max: controller.value.duration.inSeconds.toDouble(),
+                          onChangeStart: (v) {
+                            // ドラッグ開始：再生停止＆初期位置キャッシュ
+                            _controller?.pause();
                             setState(() {
                               _isScrubbing = true;
-                              _controller?.pause();
+                              _scrubPosition = v;
                             });
                           },
-                          onChangeEnd: (value) {
-                            // 操作完了時にUIの状態を更新
+                          onChanged: (v) {
+                            // ドラッグ中は位置だけ更新
+                            setState(() {
+                              _scrubPosition = v;
+                            });
+                          },
+                          onChangeEnd: (v) {
+                            // ドラッグ終了：実際にシーク＆再生再開
                             setState(() {
                               _isScrubbing = false;
                             });
-                            // スライダーの最終位置にシークしてから再生を再開
-                            _controller?.seekTo(Duration(seconds: value.toInt())).then((_) {
-                              // seekToが完了した後に再生を開始する
-                              _controller?.play();
-                            });
+                            _controller
+                                ?.seekTo(Duration(seconds: v.toInt()))
+                                .then((_) => _controller?.play());
                           },
                           activeColor: Colors.white,
                           inactiveColor: Colors.grey.shade700,
