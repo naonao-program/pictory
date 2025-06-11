@@ -110,7 +110,6 @@ class _ViewerScreenState extends State<ViewerScreen> {
               );
             },
           ),
-          
           // 上部バー
           ViewerAppBar(
             show: _showUI,
