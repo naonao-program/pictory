@@ -78,7 +78,7 @@ class GalleryProvider extends ChangeNotifier {
 
     // 総画像数を取得して「最後のページ番号」を計算
     final int totalCount = await _allPhotosPath!.assetCountAsync;
-     if (totalCount == 0) {
+    if (totalCount == 0) {
       _hasMore = false;
       notifyListeners();
       return;
