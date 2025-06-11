@@ -117,19 +117,26 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
 
 
   /// ユーザーが手動でスクロールした際のリスナー
-  void _userScrollListener() {
-    // 初回処理完了後 & 一番上に近づいたら & 読み込み中でなければ
-    if (_initialLayoutCompleted && !_isLoadingMore && _controller.position.extentBefore < 500.0) {
-      final gp = context.read<GalleryProvider>();
-      if (!gp.loading) {
-        // ★★★ 読み込み前に、現在のスクロール状態を保存 ★★★
-        setState(() {
-          _isLoadingMore = true;
-          // インジケーターが表示される前の、現在のスクロール範囲の最大値を保存します。
-          _oldMaxScrollExtent = _controller.position.maxScrollExtent;
-        });
-        gp.loadMoreIfNeeded();
-      }
+    void _userScrollListener() {
+    if (_shouldLoadMore()) {
+      _loadMorePhotos();
+    }
+  }
+
+  bool _shouldLoadMore() {
+    return _initialLayoutCompleted &&
+        !_isLoadingMore &&
+        _controller.position.extentBefore < 500.0;
+  }
+
+  void _loadMorePhotos() {
+    final gp = context.read<GalleryProvider>();
+    if (!gp.loading) {
+      setState(() {
+        _isLoadingMore = true;
+        _oldMaxScrollExtent = _controller.position.maxScrollExtent;
+      });
+      gp.loadMoreIfNeeded();
     }
   }
 
