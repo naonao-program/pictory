@@ -1,1 +1,1 @@
-日本語で返答してください
+Posts a code review in Japanese language.
