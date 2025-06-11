@@ -14,7 +14,7 @@ class GalleryProvider extends ChangeNotifier {
   /// 1ページあたりの読み込み件数
   final int _pageSize = 100;
 
-  /// 次に読み込むべき「ページ番号」。initial で lastPageIndex をセットする
+  /// 次に読み込むべき「ページ番号」。
   int? _currentPage;
 
   /// 全ページのうち「最後（最新側）のページ番号」を保持
@@ -23,7 +23,7 @@ class GalleryProvider extends ChangeNotifier {
   /// まだ「古い方のページ」が残っているか
   bool _hasMore = true;
 
-  /// “すべての写真” パスへの参照
+  /// "すべての写真" パスへの参照
   AssetPathEntity? _allPhotosPath;
 
   /// 外部から参照用：読み込まれた AssetEntity のリストを返す
@@ -34,6 +34,9 @@ class GalleryProvider extends ChangeNotifier {
 
   /// 権限がない状態か
   bool get noAccess => _noAccess;
+
+  /// まだ古い写真が残っているか
+  bool get hasMore => _hasMore;
 
   /// 権限設定画面を開く
   void openSetting() {
@@ -58,14 +61,13 @@ class GalleryProvider extends ChangeNotifier {
         orders: [
           const OrderOption(
             type: OrderOptionType.createDate,
-            asc: true, // 昇順：先頭が古い→末尾が新しい
+            asc: true, // ★ 昇順（古い→新しい）に戻す
           ),
         ],
       ),
     );
 
     if (paths.isEmpty) {
-      // そもそも画像がひとつもない
       _noAccess = false;
       _hasMore = false;
       notifyListeners();
@@ -76,36 +78,36 @@ class GalleryProvider extends ChangeNotifier {
 
     // 総画像数を取得して「最後のページ番号」を計算
     final int totalCount = await _allPhotosPath!.assetCountAsync;
+     if (totalCount == 0) {
+      _hasMore = false;
+      notifyListeners();
+      return;
+    }
     final int pageCount = (totalCount / _pageSize).ceil();
-    _lastPageIndex = pageCount - 1;           // ex: total=250, pageCount=3, lastPageIndex=2
-    _currentPage = _lastPageIndex;            // まずは最新ページ＝lastPageIndex を読み込む
+    _lastPageIndex = pageCount - 1;
+    _currentPage = _lastPageIndex; // まずは最新ページ＝lastPageIndex を読み込む
 
-    // 最新のページだけを読み込み（reset:true）
+    // 最新のページだけを読み込み
     await _loadPage(reset: true);
-
-    // ここで遅延ではなく「今すぐ Consumer に伝える」
     notifyListeners();
   }
 
-  /// スクロール位置に応じて、さらに古いページを読み込むかチェック
-  void loadMoreIfNeeded(int index) {
-    if (!_hasMore || _loading) return;
-    
-    if (index <= 20) {
-      if (!_loading) {
-        // _loadPageの完了後に、ここで明示的にUI更新を通知する
-        _loadPage().then((_) {
-          notifyListeners();
-        });
-      }
-    }
+  /// スクロール位置に応じて、さらに古いページを読み込む
+  Future<void> loadMoreIfNeeded() async {
+    if (_loading || !_hasMore) return;
+    await _loadPage();
+    notifyListeners();
   }
 
   /// ページ単位での読み込み処理
   Future<void> _loadPage({bool reset = false}) async {
-    if (_loading || _allPhotosPath == null || _currentPage == null) return;
+    if (_loading) return;
+    if (_allPhotosPath == null || _currentPage == null || _currentPage! < 0) {
+      _hasMore = false;
+      return;
+    }
+
     _loading = true;
-    // reset時にはnotifyListenersを呼ぶので、ここでは呼ばない
     if (!reset) {
       notifyListeners();
     }
@@ -113,6 +115,7 @@ class GalleryProvider extends ChangeNotifier {
     if (reset) {
       _assets.clear();
       _hasMore = true;
+      _currentPage = _lastPageIndex; // リセット時は最新ページから
     }
 
     final int pageToLoad = _currentPage!;
@@ -120,61 +123,26 @@ class GalleryProvider extends ChangeNotifier {
       page: pageToLoad,
       size: _pageSize,
     );
-
-    if (pageToLoad == 0) {
-      _hasMore = false;
-    } else {
-      _hasMore = true;
-    }
+    
+    _loading = false;
 
     if (reset) {
       _assets.addAll(pageList);
     } else {
-      _assets.insertAll(0, pageList);
+      _assets.insertAll(0, pageList); // 古い写真をリストの先頭に追加
     }
 
-    _currentPage = pageToLoad - 1;
-    _loading = false;
-    
-    // addPostFrameCallbackを削除し、呼び出し元でnotifyListenersを呼ぶようにする
-    // これによりUI更新のタイミングが明確になる
+    if (pageToLoad == 0) {
+      _hasMore = false;
+    }
+
+    _currentPage = pageToLoad - 1; // 次はさらに古いページを読み込む
   }
 
-  /// 全件リフレッシュ（例：削除後などに呼ぶ）
+  /// 全件リフレッシュ
   Future<void> refresh() async {
     if (_allPhotosPath == null || _lastPageIndex == null) return;
-    _currentPage = _lastPageIndex;
-    _assets.clear();
-    _hasMore = true;
     await _loadPage(reset: true);
-    // すぐに Consumer へ更新を伝える
-    notifyListeners();
-  }
-  /// まだ読み込んでいないアセットを全て読み込む
-  Future<void> loadAllRemainingAssets() async {
-    // すでに全件読み込み済み、または読み込み中は何もしない
-    if (!_hasMore || _loading) return;
-
-    _loading = true;
-    notifyListeners();
-
-    // 現在のページから最古(0)のページまでループで取得
-    while (_hasMore && _currentPage != null && _currentPage! >= 0) {
-      final int pageToLoad = _currentPage!;
-      final List<AssetEntity> pageList = await _allPhotosPath!.getAssetListPaged(
-        page: pageToLoad,
-        size: _pageSize,
-      );
-      
-      _assets.insertAll(0, pageList);
-
-      if (pageToLoad == 0) {
-        _hasMore = false;
-      }
-      _currentPage = pageToLoad - 1;
-    }
-
-    _loading = false;
     notifyListeners();
   }
 }
