@@ -70,22 +70,24 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
     }
     // ★★★ 2. 古い写真の追加読み込み後のスクロール位置補正処理 ★★★
     else if (_isLoadingMore) {
+      // 次のフレームの描画が完了した後に、スクロール位置を補正するタスクを予約します。
       SchedulerBinding.instance.addPostFrameCallback((_) {
+        // このコールバックが実行される時点では、setStateによるUI更新が完了し、
+        // 新しいアイテムが追加され、インジケーターが消えた後の、最終的なレイアウトになっています。
         if (mounted && _controller.hasClients) {
           final newMaxScrollExtent = _controller.position.maxScrollExtent;
-          // 追加された高さ（新しいアイテム＋インジケーター）
-          final addedHeightWithIndicator = newMaxScrollExtent - _oldMaxScrollExtent;
+          // 新しく追加されたコンテンツの高さを、更新前後のスクロール範囲の差分から計算します。
+          final addedHeight = newMaxScrollExtent - _oldMaxScrollExtent;
           
-          // インジケーターが消えることを見越して、その高さ分を引いた位置にジャンプする
-          final targetOffset = _controller.offset + addedHeightWithIndicator - _indicatorHeight;
-          
-          _controller.jumpTo(targetOffset);
-          
-          // 補正が完了したので、フラグをリセット
-          setState(() {
-            _isLoadingMore = false;
-          });
+          // 現在のスクロール位置から、追加されたコンテンツの高さ分だけ下に移動させ、表示位置を維持します。
+          _controller.jumpTo(_controller.offset + addedHeight);
         }
+      });
+
+      // Providerから新しいデータが届いたので、UIを更新します。
+      // これにより、次のフレームで `_isLoadingMore`が`false`になり、インジケーターが消え、新しい写真がリストに追加されます。
+      setState(() {
+        _isLoadingMore = false;
       });
     }
   }
@@ -123,6 +125,7 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
         // ★★★ 読み込み前に、現在のスクロール状態を保存 ★★★
         setState(() {
           _isLoadingMore = true;
+          // インジケーターが表示される前の、現在のスクロール範囲の最大値を保存します。
           _oldMaxScrollExtent = _controller.position.maxScrollExtent;
         });
         gp.loadMoreIfNeeded();
