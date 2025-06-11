@@ -77,10 +77,8 @@ class _ViewerScreenState extends State<ViewerScreen> {
         Navigator.of(context).pop();
       } else {
         // 削除後の画面遷移処理
-        final newIndex = (_currentIndex - 1).clamp(0, widget.assets.length - 2);
+        final newIndex = (_currentIndex - 1).clamp(0, widget.assets.length - 1);
         setState(() {
-          // 削除されたので、現在のリストから該当アセットを削除
-          widget.assets.removeAt(_currentIndex);
           // 新しいインデックスに更新
           _currentIndex = newIndex;
         });
