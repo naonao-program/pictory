@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
+import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../providers/gallery_provider.dart';
 import 'widgets/photo_viewer_view.dart';
@@ -9,9 +11,10 @@ import 'widgets/viewer_app_bar.dart';
 import 'widgets/viewer_bottom_bar.dart';
 import 'widgets/info_sheet.dart';
 
+/// 写真や動画を全画面表示するためのメインスクリーン。
 class ViewerScreen extends StatefulWidget {
-  final List<AssetEntity> assets;
-  final int initialIndex;
+  final List<AssetEntity> assets; // 表示するアセットのリスト
+  final int initialIndex;        // 最初に表示するアセットのインデックス
 
   const ViewerScreen({
     super.key,
@@ -24,39 +27,114 @@ class ViewerScreen extends StatefulWidget {
 }
 
 class _ViewerScreenState extends State<ViewerScreen> {
+  /// ページのスワイプを管理するコントローラー。
   late final PageController _pageController;
+  
+  /// 現在表示されているアセットのインデックス。
   late int _currentIndex;
-  bool _showUI = true; // UI(バーなど)の表示/非表示を管理
+  
+  /// AppBarやBottomBarなどのUIを表示するかどうかのフラグ。
+  bool _showUI = true;
+
+  /// 動画再生を管理するコントローラー。
+  VideoPlayerController? _videoController;
+  
+  /// 動画コントローラーの初期化状態を管理するFuture。
+  Future<void>? _initializeVideoPlayerFuture;
+  
+  /// 素早いスワイプによる動画初期化処理の競合を防ぐためのセッションID。
+  /// ページが切り替わるたびにインクリメントされます。
+  int _videoSession = 0;
 
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
     _pageController = PageController(initialPage: _currentIndex);
+    // 最初に表示するページのアセット（特に動画）の初期化を開始
+    _initializeControllerForPage(_currentIndex);
   }
 
   @override
   void dispose() {
     _pageController.dispose();
+    _videoController?.dispose(); // 画面が破棄されるときに動画コントローラーも破棄
     super.dispose();
   }
+  
+  /// 指定されたページの動画コントローラーを初期化するメソッド。
+  /// ページが切り替わるたびに呼び出されます。
+  Future<void> _initializeControllerForPage(int index) async {
+    // 新しい初期化リクエストが来たので、セッションIDをインクリメント
+    _videoSession++;
+    final int currentSession = _videoSession;
 
-  // 現在表示中のアセット
+    // 前のページの動画コントローラーがあれば破棄
+    await _videoController?.dispose();
+
+    // 破棄を待っている間に、さらに新しいリクエストが来ていたら（ユーザーが素早くスワイプしたら）、この処理は中断
+    if (currentSession != _videoSession || !mounted) return;
+
+    // 新しいページの状態を一旦リセット（サムネイル表示に戻す）
+    _videoController = null;
+    _initializeVideoPlayerFuture = null;
+    if (mounted) setState(() {});
+
+    if (index < 0 || index >= widget.assets.length) return;
+
+    final asset = widget.assets[index];
+    // 表示するアセットが動画でなければ、ここで処理を終了
+    if (asset.type != AssetType.video) {
+      return;
+    }
+
+    // 動画ファイルを取得
+    final file = await asset.file;
+
+    // ファイル取得を待つ間に新しいリクエストが来ていたら中断
+    if (currentSession != _videoSession || !mounted || file == null) return;
+    
+    // 新しい動画コントローラーを生成し、初期化を開始
+    final newController = VideoPlayerController.file(file);
+    _videoController = newController;
+    _initializeVideoPlayerFuture = newController.initialize();
+    
+    // 初期化が完了したら再生を開始するが、その時点でもセッションが有効か再度確認
+    _initializeVideoPlayerFuture?.then((_) {
+        if (mounted && _videoController == newController) {
+            _videoController?.play();
+            _videoController?.setLooping(true); // ループ再生を有効に
+        }
+    });
+
+    // UIを更新して、新しいコントローラーとFutureをVideoViewerViewに渡す
+    if (mounted) setState(() {});
+  }
+
+  /// 現在表示中のアセットを取得するゲッター。
   AssetEntity get currentAsset => widget.assets[_currentIndex];
 
+  /// UI（AppBar, BottomBar）の表示・非表示を切り替える。
   void _toggleUI() {
     setState(() {
       _showUI = !_showUI;
     });
   }
 
+  /// PageViewでページが切り替わったときに呼び出される。
   void _onPageChanged(int index) {
+    if (_currentIndex == index) return;
+    
     setState(() {
       _currentIndex = index;
     });
+    // 新しいページのためのコントローラー初期化処理を開始
+    _initializeControllerForPage(index);
   }
 
+  /// 削除ボタンが押されたときの処理。
   void _onDelete() async {
+    // 確認ダイアログを表示
     final bool didDelete = await showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -70,21 +148,21 @@ class _ViewerScreenState extends State<ViewerScreen> {
     ) ?? false;
 
     if (didDelete && mounted) {
-      await PhotoManager.editor.deleteWithIds([currentAsset.id]);
+      final idToDelete = currentAsset.id;
+      
+      // 削除操作の前に、進行中の動画関連処理をすべて停止・破棄する
+      _videoSession++; 
+      await _videoController?.dispose();
+      _videoController = null;
+      _initializeVideoPlayerFuture = null;
+
+      // PhotoManager経由でアセットを削除
+      await PhotoManager.editor.deleteWithIds([idToDelete]);
+      // GalleryProviderにデータの更新を通知
       await context.read<GalleryProvider>().refresh();
-      // 1件しか無かった場合は前の画面に戻る
-      if (widget.assets.length <= 1) {
-        Navigator.of(context).pop();
-      } else {
-        // 削除後の画面遷移処理
-        final newIndex = (_currentIndex - 1).clamp(0, widget.assets.length - 1);
-        setState(() {
-          // 新しいインデックスに更新
-          _currentIndex = newIndex;
-        });
-        // 前のページにアニメーションなしで遷移
-        _pageController.jumpToPage(newIndex);
-      }
+      
+      // ビューワー画面を閉じる
+      Navigator.of(context).pop();
     }
   }
 
@@ -94,36 +172,58 @@ class _ViewerScreenState extends State<ViewerScreen> {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // 背景のページビュー（写真/動画をスワイプで切り替え）
           PageView.builder(
             controller: _pageController,
             itemCount: widget.assets.length,
             onPageChanged: _onPageChanged,
             itemBuilder: (context, index) {
               final asset = widget.assets[index];
-              // タップでUI表示/非表示を切り替えるためのラッパー
-              return GestureDetector(
-                onTap: _toggleUI,
-                child: asset.type == AssetType.video
-                    ? VideoViewerView(asset: asset)
-                    : PhotoViewerView(asset: asset),
-              );
+              
+              if (asset.type == AssetType.video) {
+                // --- 動画アセットの場合 ---
+                // 現在表示中のページで、かつ動画コントローラーが準備完了している場合
+                if (index == _currentIndex && _videoController != null && _initializeVideoPlayerFuture != null) {
+                  return VideoViewerView(
+                    key: ValueKey(asset.id), // アセットIDをキーに設定し、ウィジェットの再利用を正しく制御
+                    onToggleUI: _toggleUI,
+                    controller: _videoController!,
+                    initializeFuture: _initializeVideoPlayerFuture!,
+                  );
+                } else {
+                  // 動画の読み込み中はサムネイルを表示
+                  return Center(
+                    child: AssetEntityImage(
+                      asset,
+                      isOriginal: false, // サムネイル品質
+                      thumbnailSize: const ThumbnailSize.square(500),
+                      fit: BoxFit.contain,
+                    ),
+                  );
+                }
+              } else {
+                // --- 写真アセットの場合 ---
+                return PhotoViewerView(
+                  asset: asset,
+                  onToggleUI: _toggleUI,
+                );
+              }
             },
           ),
-          // 上部バー
-          ViewerAppBar(
-            show: _showUI,
-            asset: currentAsset,
-            onBackPressed: () => Navigator.of(context).pop(),
-          ),
-
-          // 下部バー
-          ViewerBottomBar(
-            show: _showUI,
-            asset: currentAsset,
-            onDelete: _onDelete,
-            onShowInfo: () => InfoSheet.show(context, currentAsset),
-          ),
+          // リストの範囲外のインデックスを参照しないようにチェック
+          if (_currentIndex < widget.assets.length) ...[
+            // --- 上下のUIバー ---
+            ViewerAppBar(
+              show: _showUI,
+              asset: currentAsset,
+              onBackPressed: () => Navigator.of(context).pop(),
+            ),
+            ViewerBottomBar(
+              show: _showUI,
+              asset: currentAsset,
+              onDelete: _onDelete,
+              onShowInfo: () => InfoSheet.show(context, currentAsset), // 情報シートを表示
+            ),
+          ]
         ],
       ),
     );

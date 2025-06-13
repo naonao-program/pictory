@@ -1,44 +1,84 @@
 import 'package:flutter/material.dart';
-import 'package:photo_manager/photo_manager.dart';
 import 'package:video_player/video_player.dart';
 
 class VideoViewerView extends StatefulWidget {
-  final AssetEntity asset;
+  final VoidCallback onToggleUI;
+  final VideoPlayerController controller;
+  final Future<void> initializeFuture;
+
   const VideoViewerView({
     super.key,
-    required this.asset
+    required this.onToggleUI,
+    required this.controller,
+    required this.initializeFuture,
   });
 
   @override
   State<VideoViewerView> createState() => _VideoViewerViewState();
 }
 
-class _VideoViewerViewState extends State<VideoViewerView> {
-  VideoPlayerController? _controller;
+class _VideoViewerViewState extends State<VideoViewerView> with SingleTickerProviderStateMixin {
   bool _isScrubbing = false;
-  double _scrubPosition = 0.0;  // スクラブ中の一時的な位置を保持
+  double _scrubPosition = 0.0;
+
+  late final TransformationController _transformationController;
+  late final AnimationController _animationController;
+  Animation<Matrix4>? _animation;
+  Offset? _doubleTapLocalPosition;
 
   @override
   void initState() {
     super.initState();
-    _initializePlayer();
+    _transformationController = TransformationController();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    )..addListener(() {
+      if (_animation != null) {
+        _transformationController.value = _animation!.value;
+      }
+    });
   }
-
-  Future<void> _initializePlayer() async {
-    final file = await widget.asset.file;
-    if (file == null) return;
-    _controller = VideoPlayerController.file(file)
-      ..initialize().then((_) {
-        setState(() {}); // UIを更新して再生ボタンなどを表示
-        _controller?.play(); // 自動再生
-        _controller?.setLooping(true); // ループ再生を有効
-      });
+  
+  /// --- 追加: ウィジェットが更新された際の処理 ---
+  /// 新しいビデオコントローラーが渡されたときに、前のビデオのズーム状態をリセットします。
+  @override
+  void didUpdateWidget(VideoViewerView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.controller != oldWidget.controller) {
+      _transformationController.value = Matrix4.identity();
+      _animationController.reset();
+    }
   }
 
   @override
   void dispose() {
-    _controller?.dispose();
+    _transformationController.dispose();
+    _animationController.dispose();
     super.dispose();
+  }
+
+  void _onDoubleTap() {
+    final position = _doubleTapLocalPosition;
+    if (position == null) return;
+
+    final currentMatrix = _transformationController.value;
+    Matrix4 targetMatrix;
+
+    if (currentMatrix.isIdentity()) {
+      const double scale = 3.0;
+      targetMatrix = Matrix4.identity()
+        ..translate(-position.dx * (scale - 1), -position.dy * (scale - 1))
+        ..scale(scale);
+    } else {
+      targetMatrix = Matrix4.identity();
+    }
+    
+    _animation = Matrix4Tween(
+      begin: currentMatrix,
+      end: targetMatrix,
+    ).animate(CurveTween(curve: Curves.easeInOut).animate(_animationController));
+    _animationController.forward(from: 0);
   }
 
   String _formatDuration(Duration duration) {
@@ -49,111 +89,123 @@ class _VideoViewerViewState extends State<VideoViewerView> {
 
   @override
   Widget build(BuildContext context) {
-    if (_controller == null || !_controller!.value.isInitialized) {
-      return const Center(child: CircularProgressIndicator());
-    }
+    return FutureBuilder<void>(
+      future: widget.initializeFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        
+        final controller = widget.controller;
 
-    // null チェック後に非 null を保証するローカル変数
-    final controller = _controller!;
-
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        // ビデオ表示
-        Center(
-          child: AspectRatio(
-            aspectRatio: controller.value.aspectRatio,
-            child: VideoPlayer(controller),
-          ),
-        ),
-        // 再生/一時停止ボタン
-        ValueListenableBuilder(
-          valueListenable: _controller!,
-          builder: (context, VideoPlayerValue value, child) {
-            return IconButton(
-              iconSize: 64,
-              // スクラブ中もボタンを非表示にする
-              color: Colors.white.withAlpha(value.isPlaying || _isScrubbing ? 0 : 179),
-              icon: Icon(value.isPlaying ? Icons.pause_circle : Icons.play_circle),
-              onPressed: () {
-                setState(() {
-                  if (value.isPlaying) {
-                    controller.pause();
-                  } else {
-                    controller.play();
-                  }
-                });
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            GestureDetector(
+              onTap: widget.onToggleUI,
+              onDoubleTapDown: (details) {
+                _doubleTapLocalPosition = details.localPosition;
               },
-            );
-          },
-        ),
-        // プログレスバーを画面下部に配置
-        Positioned(
-          bottom: 80.0, 
-          left: 0,
-          right: 0,
-          child: SafeArea(
-            child: ValueListenableBuilder(
-              valueListenable: _controller!,
-              builder: (context, VideoPlayerValue value, child) {
-                // 再生時間が0の場合はスライダーを表示しない
-                if (value.duration.inSeconds == 0) return const SizedBox.shrink();
-                
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: Row(
-                    children: [
-                      Text(
-                        _formatDuration(value.position),
-                        style: const TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                      Expanded(
-                        child: Slider(
-                          // ドラッグ中はスクラブ位置を表示、通常時は再生位置を表示
-                          value: _isScrubbing
-                              ? _scrubPosition
-                              : controller.value.position.inSeconds.toDouble(),
-                          min: 0.0,
-                          max: controller.value.duration.inSeconds.toDouble(),
-                          onChangeStart: (v) {
-                            // ドラッグ開始：再生停止＆初期位置キャッシュ
-                            _controller?.pause();
-                            setState(() {
-                              _isScrubbing = true;
-                              _scrubPosition = v;
-                            });
-                          },
-                          onChanged: (v) {
-                            // ドラッグ中は位置だけ更新
-                            setState(() {
-                              _scrubPosition = v;
-                            });
-                          },
-                          onChangeEnd: (v) {
-                            // ドラッグ終了：実際にシーク＆再生再開
-                            setState(() {
-                              _isScrubbing = false;
-                            });
-                            _controller
-                                ?.seekTo(Duration(seconds: v.toInt()))
-                                .then((_) => _controller?.play());
-                          },
-                          activeColor: Colors.white,
-                          inactiveColor: Colors.grey.shade700,
-                        ),
-                      ),
-                      Text(
-                        _formatDuration(value.duration),
-                        style: const TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                    ],
+              onDoubleTap: _onDoubleTap,
+              child: Container(
+                color: Colors.transparent,
+                child: InteractiveViewer(
+                  transformationController: _transformationController,
+                  minScale: 1.0,
+                  maxScale: 4.0,
+                  child: Center(
+                    child: AspectRatio(
+                      aspectRatio: controller.value.aspectRatio,
+                      child: VideoPlayer(controller),
+                    ),
                   ),
+                ),
+              ),
+            ),
+            
+            ValueListenableBuilder(
+              valueListenable: controller,
+              builder: (context, VideoPlayerValue value, child) {
+                return IconButton(
+                  iconSize: 64,
+                  color: Colors.white.withAlpha(value.isPlaying || _isScrubbing ? 0 : 179),
+                  icon: Icon(value.isPlaying ? Icons.pause_circle : Icons.play_circle),
+                  onPressed: () {
+                    setState(() {
+                      if (value.isPlaying) {
+                        controller.pause();
+                      } else {
+                        controller.play();
+                      }
+                    });
+                  },
                 );
               },
             ),
-          ),
-        ),
-      ],
+            
+            Positioned(
+              bottom: 80.0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                child: ValueListenableBuilder(
+                  valueListenable: controller,
+                  builder: (context, VideoPlayerValue value, child) {
+                    if (value.duration.inSeconds == 0) return const SizedBox.shrink();
+                    
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: Row(
+                        children: [
+                          Text(
+                            _formatDuration(value.position),
+                            style: const TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                          Expanded(
+                            child: Slider(
+                              value: _isScrubbing
+                                  ? _scrubPosition
+                                  : value.position.inSeconds.toDouble(),
+                              min: 0.0,
+                              max: value.duration.inSeconds.toDouble(),
+                              onChangeStart: (v) {
+                                controller.pause();
+                                setState(() {
+                                  _isScrubbing = true;
+                                  _scrubPosition = v;
+                                });
+                              },
+                              onChanged: (v) {
+                                setState(() {
+                                  _scrubPosition = v;
+                                });
+                              },
+                              onChangeEnd: (v) {
+                                setState(() {
+                                  _isScrubbing = false;
+                                });
+                                controller
+                                    .seekTo(Duration(seconds: v.toInt()))
+                                    .then((_) => controller.play());
+                              },
+                              activeColor: Colors.white,
+                              inactiveColor: Colors.grey.shade700,
+                            ),
+                          ),
+                          Text(
+                            _formatDuration(value.duration),
+                            style: const TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
