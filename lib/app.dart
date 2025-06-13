@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/gallery_provider.dart';
-import 'screens/gallery_screen.dart';
+import 'screens/gallery/gallery_screen.dart';
 
 class PictoryApp extends StatelessWidget {
   const PictoryApp({super.key});
