@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 
-// StatefulWidgetに変更し、ズーム状態を管理できるようにします
+/// 1枚の画像を表示し、ズームや移動の操作を提供するウィジェット。
 class PhotoViewerView extends StatefulWidget {
   final AssetEntity asset;
-  // UIの表示/非表示を切り替えるためのコールバック関数を追加
+  // UIの表示/非表示を切り替えるためのコールバック関数
   final VoidCallback onToggleUI;
 
   const PhotoViewerView({
@@ -19,12 +19,16 @@ class PhotoViewerView extends StatefulWidget {
 }
 
 class _PhotoViewerViewState extends State<PhotoViewerView> with SingleTickerProviderStateMixin {
-  // ズームや移動の状態を管理するコントローラー
+  /// InteractiveViewerのズームや移動の状態をプログラムから制御するためのコントローラー。
   late final TransformationController _transformationController;
-  // ズームアニメーションを管理するコントローラー
+  
+  /// ダブルタップ時のズームアニメーションを管理するコントローラー。
   late final AnimationController _animationController;
+  
+  /// ズームアニメーションのMatrix4（変換行列）の値を保持するオブジェクト。
   Animation<Matrix4>? _animation;
-  // ダブルタップされた画面上の位置を保持
+  
+  /// ダブルタップされた画面上のローカル座標を保持する。
   Offset? _doubleTapLocalPosition;
 
   @override
@@ -32,10 +36,10 @@ class _PhotoViewerViewState extends State<PhotoViewerView> with SingleTickerProv
     super.initState();
     _transformationController = TransformationController();
     _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300), // アニメーション時間を調整
+      vsync: this, // アニメーションのタイミングを同期させる
+      duration: const Duration(milliseconds: 300), // アニメーションの時間
     )..addListener(() {
-      // アニメーションの値が変更されるたびに、TransformationControllerを更新
+      // アニメーションの値が変更されるたびに、TransformationControllerの値を更新してUIに反映させる
       if (_animation != null) {
         _transformationController.value = _animation!.value;
       }
@@ -49,7 +53,7 @@ class _PhotoViewerViewState extends State<PhotoViewerView> with SingleTickerProv
     super.dispose();
   }
 
-  /// ダブルタップ時に呼び出されるズーム処理
+  /// ダブルタップ時に呼び出されるズーム処理。
   void _onDoubleTap() {
     final position = _doubleTapLocalPosition;
     if (position == null) return;
@@ -57,46 +61,53 @@ class _PhotoViewerViewState extends State<PhotoViewerView> with SingleTickerProv
     final currentMatrix = _transformationController.value;
     Matrix4 targetMatrix;
 
-    // 現在ズームされていない場合（Matrixが初期状態の場合）
+    // isIdentityは、Matrix4が初期状態（移動・拡大縮小・回転なし）かどうかを判定する。
     if (currentMatrix.isIdentity()) {
+      // --- ズームイン処理 ---
       const double scale = 3.0; // ズーム倍率
-      // タップした位置が中心になるようにMatrixを計算
+      // タップした位置がズームの中心になるように、Matrixを計算する。
       targetMatrix = Matrix4.identity()
+        // 1. ズームの中心がタップ位置になるように平行移動
         ..translate(-position.dx * (scale - 1), -position.dy * (scale - 1))
+        // 2. 拡大
         ..scale(scale);
     } else {
+      // --- ズームアウト処理 ---
       // すでにズームされている場合は、元のサイズ（初期状態）に戻す
       targetMatrix = Matrix4.identity();
     }
     
-    // 現在のMatrixからターゲットのMatrixへアニメーションを開始
+    // 現在の状態(begin)から目標の状態(end)までを滑らかに変化させるアニメーションを作成
     _animation = Matrix4Tween(
       begin: currentMatrix,
       end: targetMatrix,
     ).animate(CurveTween(curve: Curves.easeInOut).animate(_animationController));
+    
+    // アニメーションを開始
     _animationController.forward(from: 0);
   }
 
   @override
   Widget build(BuildContext context) {
-    // GestureDetectorでラップし、タップ操作を検知
+    // GestureDetectorでラップし、タップ操作を検知できるようにする
     return GestureDetector(
-      onTap: widget.onToggleUI, // シングルタップでUI表示/非表示を切り替え
+      onTap: widget.onToggleUI, // シングルタップでUIの表示/非表示を切り替え
       onDoubleTapDown: (details) {
-        // ダブルタップした位置を保存
+        // ダブルタップされた瞬間のローカル座標を保存
         _doubleTapLocalPosition = details.localPosition;
       },
       onDoubleTap: _onDoubleTap, // ダブルタップでズーム処理を実行
       child: InteractiveViewer(
-        transformationController: _transformationController,
-        minScale: 1.0,
-        maxScale: 4.0, // 最大ズーム倍率
+        transformationController: _transformationController, // ズーム状態をコントローラーで管理
+        minScale: 1.0,      // 最小スケール
+        maxScale: 4.0,      // 最大スケール
         child: Center(
           child: AssetEntityImage(
             widget.asset,
-            isOriginal: true, // オリジナル画質で表示
-            fit: BoxFit.contain,
+            isOriginal: true, // オリジナル画質の画像を表示
+            fit: BoxFit.contain, // アスペクト比を保ちながらウィジェットに収める
             loadingBuilder: (context, child, loadingProgress) {
+              // 読み込み中はインジケーターを表示
               if (loadingProgress == null) return child;
               return const Center(child: CircularProgressIndicator());
             },
