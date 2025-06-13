@@ -4,24 +4,47 @@ import 'package:video_player/video_player.dart';
 
 class VideoViewerView extends StatefulWidget {
   final AssetEntity asset;
+  // UIの表示/非表示を切り替えるためのコールバック関数を追加
+  final VoidCallback onToggleUI;
+
   const VideoViewerView({
     super.key,
-    required this.asset
+    required this.asset,
+    required this.onToggleUI,
   });
 
   @override
   State<VideoViewerView> createState() => _VideoViewerViewState();
 }
 
-class _VideoViewerViewState extends State<VideoViewerView> {
+// SingleTickerProviderStateMixin を追加してアニメーションを有効に
+class _VideoViewerViewState extends State<VideoViewerView> with SingleTickerProviderStateMixin {
   VideoPlayerController? _controller;
   bool _isScrubbing = false;
-  double _scrubPosition = 0.0;  // スクラブ中の一時的な位置を保持
+  double _scrubPosition = 0.0;
+
+  // ズームと移動の状態を管理するコントローラー
+  late final TransformationController _transformationController;
+  // ズームアニメーションを管理するコントローラー
+  late final AnimationController _animationController;
+  Animation<Matrix4>? _animation;
+  // ダブルタップされた画面上の位置を保持
+  Offset? _doubleTapLocalPosition;
 
   @override
   void initState() {
     super.initState();
     _initializePlayer();
+    
+    _transformationController = TransformationController();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    )..addListener(() {
+      if (_animation != null) {
+        _transformationController.value = _animation!.value;
+      }
+    });
   }
 
   Future<void> _initializePlayer() async {
@@ -29,16 +52,42 @@ class _VideoViewerViewState extends State<VideoViewerView> {
     if (file == null) return;
     _controller = VideoPlayerController.file(file)
       ..initialize().then((_) {
-        setState(() {}); // UIを更新して再生ボタンなどを表示
-        _controller?.play(); // 自動再生
-        _controller?.setLooping(true); // ループ再生を有効
+        setState(() {});
+        _controller?.play();
+        _controller?.setLooping(true);
       });
   }
 
   @override
   void dispose() {
     _controller?.dispose();
+    _transformationController.dispose();
+    _animationController.dispose();
     super.dispose();
+  }
+  
+  /// ダブルタップ時に呼び出されるズーム処理
+  void _onDoubleTap() {
+    final position = _doubleTapLocalPosition;
+    if (position == null) return;
+
+    final currentMatrix = _transformationController.value;
+    Matrix4 targetMatrix;
+
+    if (currentMatrix.isIdentity()) {
+      const double scale = 3.0;
+      targetMatrix = Matrix4.identity()
+        ..translate(-position.dx * (scale - 1), -position.dy * (scale - 1))
+        ..scale(scale);
+    } else {
+      targetMatrix = Matrix4.identity();
+    }
+    
+    _animation = Matrix4Tween(
+      begin: currentMatrix,
+      end: targetMatrix,
+    ).animate(CurveTween(curve: Curves.easeInOut).animate(_animationController));
+    _animationController.forward(from: 0);
   }
 
   String _formatDuration(Duration duration) {
@@ -53,26 +102,42 @@ class _VideoViewerViewState extends State<VideoViewerView> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    // null チェック後に非 null を保証するローカル変数
     final controller = _controller!;
 
     return Stack(
       alignment: Alignment.center,
       children: [
-        // ビデオ表示
-        Center(
-          child: AspectRatio(
-            aspectRatio: controller.value.aspectRatio,
-            child: VideoPlayer(controller),
+        // 背景の動画プレーヤー部分
+        GestureDetector(
+          onTap: widget.onToggleUI,
+          onDoubleTapDown: (details) {
+            _doubleTapLocalPosition = details.localPosition;
+          },
+          onDoubleTap: _onDoubleTap,
+          // 透明なコンテナを配置して、タップ領域を全体に広げる
+          child: Container(
+            color: Colors.transparent,
+            child: InteractiveViewer(
+              transformationController: _transformationController,
+              minScale: 1.0,
+              maxScale: 4.0,
+              // InteractiveViewerの子要素として動画を配置
+              child: Center(
+                child: AspectRatio(
+                  aspectRatio: controller.value.aspectRatio,
+                  child: VideoPlayer(controller),
+                ),
+              ),
+            ),
           ),
         ),
-        // 再生/一時停止ボタン
+        
+        // 再生/一時停止ボタン (ズームの影響を受けない)
         ValueListenableBuilder(
           valueListenable: _controller!,
           builder: (context, VideoPlayerValue value, child) {
             return IconButton(
               iconSize: 64,
-              // スクラブ中もボタンを非表示にする
               color: Colors.white.withAlpha(value.isPlaying || _isScrubbing ? 0 : 179),
               icon: Icon(value.isPlaying ? Icons.pause_circle : Icons.play_circle),
               onPressed: () {
@@ -87,16 +152,15 @@ class _VideoViewerViewState extends State<VideoViewerView> {
             );
           },
         ),
-        // プログレスバーを画面下部に配置
+        // プログレスバー (ズームの影響を受けない)
         Positioned(
-          bottom: 80.0, 
+          bottom: 80.0,
           left: 0,
           right: 0,
           child: SafeArea(
             child: ValueListenableBuilder(
               valueListenable: _controller!,
               builder: (context, VideoPlayerValue value, child) {
-                // 再生時間が0の場合はスライダーを表示しない
                 if (value.duration.inSeconds == 0) return const SizedBox.shrink();
                 
                 return Padding(
@@ -109,14 +173,12 @@ class _VideoViewerViewState extends State<VideoViewerView> {
                       ),
                       Expanded(
                         child: Slider(
-                          // ドラッグ中はスクラブ位置を表示、通常時は再生位置を表示
                           value: _isScrubbing
                               ? _scrubPosition
                               : controller.value.position.inSeconds.toDouble(),
                           min: 0.0,
                           max: controller.value.duration.inSeconds.toDouble(),
                           onChangeStart: (v) {
-                            // ドラッグ開始：再生停止＆初期位置キャッシュ
                             _controller?.pause();
                             setState(() {
                               _isScrubbing = true;
@@ -124,13 +186,11 @@ class _VideoViewerViewState extends State<VideoViewerView> {
                             });
                           },
                           onChanged: (v) {
-                            // ドラッグ中は位置だけ更新
                             setState(() {
                               _scrubPosition = v;
                             });
                           },
                           onChangeEnd: (v) {
-                            // ドラッグ終了：実際にシーク＆再生再開
                             setState(() {
                               _isScrubbing = false;
                             });

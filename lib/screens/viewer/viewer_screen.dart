@@ -26,7 +26,7 @@ class ViewerScreen extends StatefulWidget {
 class _ViewerScreenState extends State<ViewerScreen> {
   late final PageController _pageController;
   late int _currentIndex;
-  bool _showUI = true; // UI(バーなど)の表示/非表示を管理
+  bool _showUI = true;
 
   @override
   void initState() {
@@ -41,7 +41,6 @@ class _ViewerScreenState extends State<ViewerScreen> {
     super.dispose();
   }
 
-  // 現在表示中のアセット
   AssetEntity get currentAsset => widget.assets[_currentIndex];
 
   void _toggleUI() {
@@ -72,17 +71,15 @@ class _ViewerScreenState extends State<ViewerScreen> {
     if (didDelete && mounted) {
       await PhotoManager.editor.deleteWithIds([currentAsset.id]);
       await context.read<GalleryProvider>().refresh();
-      // 1件しか無かった場合は前の画面に戻る
       if (widget.assets.length <= 1) {
         Navigator.of(context).pop();
       } else {
-        // 削除後の画面遷移処理
-        final newIndex = (_currentIndex - 1).clamp(0, widget.assets.length - 1);
+        final newIndex = (_currentIndex > 0 ? _currentIndex - 1 : 0);
+        // PageView.builderのitemBuilderが再構築されるようにsetStateを呼び出す
         setState(() {
-          // 新しいインデックスに更新
+           widget.assets.removeAt(_currentIndex);
           _currentIndex = newIndex;
         });
-        // 前のページにアニメーションなしで遷移
         _pageController.jumpToPage(newIndex);
       }
     }
@@ -94,30 +91,32 @@ class _ViewerScreenState extends State<ViewerScreen> {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // 背景のページビュー（写真/動画をスワイプで切り替え）
           PageView.builder(
             controller: _pageController,
             itemCount: widget.assets.length,
             onPageChanged: _onPageChanged,
             itemBuilder: (context, index) {
               final asset = widget.assets[index];
-              // タップでUI表示/非表示を切り替えるためのラッパー
-              return GestureDetector(
-                onTap: _toggleUI,
-                child: asset.type == AssetType.video
-                    ? VideoViewerView(asset: asset)
-                    : PhotoViewerView(asset: asset),
-              );
+              // 以前のGestureDetectorを削除し、
+              // 代わりに onToggleUI コールバックを渡します。
+              if (asset.type == AssetType.video) {
+                return VideoViewerView(
+                  asset: asset,
+                  onToggleUI: _toggleUI, // コールバックを渡す
+                );
+              } else {
+                return PhotoViewerView(
+                  asset: asset,
+                  onToggleUI: _toggleUI, // コールバックを渡す
+                );
+              }
             },
           ),
-          // 上部バー
           ViewerAppBar(
             show: _showUI,
             asset: currentAsset,
             onBackPressed: () => Navigator.of(context).pop(),
           ),
-
-          // 下部バー
           ViewerBottomBar(
             show: _showUI,
             asset: currentAsset,
