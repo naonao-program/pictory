@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 /// デバイスのギャラリーの状態を管理し、UIにデータを提供するクラス。
+/// 「すべての写真」タブのデータソースとして機能します。
 /// ChangeNotifierを継承しており、状態の変更をUIに通知することができます。
 class GalleryProvider extends ChangeNotifier {
   /// アセットの読み込み中かどうかを示すフラグ。
@@ -140,7 +141,7 @@ class GalleryProvider extends ChangeNotifier {
       page: pageToLoad,
       size: _pageSize,
     );
-    
+
     _loading = false;
 
     if (reset) {
