@@ -8,9 +8,19 @@ import '../../providers/gallery_provider.dart';
 import '../../widgets/asset_grid_item.dart';
 import '../viewer/viewer_screen.dart';
 
+// 親ウィジェット(MainScreen)に状態を伝えるためのコールバック関数の型定義
+// isActive: 選択モードかどうか
+// onShare: 共有ボタンが押されたときのアクション
+// onDelete: 削除ボタンが押されたときのアクション
+typedef SelectionChangeCallback = void Function(
+    bool isActive, VoidCallback? onShare, VoidCallback? onDelete);
+
 /// ギャラリー画面のメインとなるStatefulWidget。
 class GalleryScreen extends StatefulWidget {
-  const GalleryScreen({Key? key}) : super(key: key);
+  // 親からコールバック関数を受け取るためのプロパティ
+  final SelectionChangeCallback? onSelectionChange;
+
+  const GalleryScreen({Key? key, this.onSelectionChange}) : super(key: key);
 
   @override
   State<GalleryScreen> createState() => _GalleryScreenState();
@@ -18,111 +28,84 @@ class GalleryScreen extends StatefulWidget {
 
 /// GalleryScreenの状態を管理するStateクラス。
 /// AutomaticKeepAliveClientMixinは、タブ切り替えなどで状態を保持するために使用します。
-class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveClientMixin {
-  /// グリッドビューのスクロールを監視するためのコントローラー。
+class _GalleryScreenState extends State<GalleryScreen>
+    with AutomaticKeepAliveClientMixin {
   final ScrollController _controller = ScrollController();
-  
-  /// アイテム選択モードかどうかを示すフラグ。
   bool _selectMode = false;
-  
-  /// 選択されたアセットのIDを保持するSet。
   final Set<String> _selectedIds = {};
-  
-  /// 下部ナビゲーションバーの現在選択中のインデックス。
-  int _bottomNavIndex = 0;
-  
-  /// 初回のレイアウトとスクロールが完了したかを示すフラグ。
   bool _initialLayoutCompleted = false;
-
-  /// 古い写真を追加読み込み中かを示すフラグ。
   bool _isLoadingMore = false;
-  
-  /// 追加読み込みが始まる直前の、スクロール可能な最大範囲を保持する変数。
-  /// 読み込み後のスクロール位置調整に使用します。
   double _oldMaxScrollExtent = 0.0;
-  
-  /// 画面上部に表示される追加読み込みインジケーターの高さ。
   static const double _indicatorHeight = 56.0;
 
+  // タブが非表示になってもStateを破棄しないようにするための設定
   @override
-  bool get wantKeepAlive => true; // タブが非表示になってもStateを破棄しない
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
     final gp = context.read<GalleryProvider>();
-    
-    gp.init(); // Providerの初期化
-    gp.addListener(_onProviderUpdate); // Providerの更新を監視
-    _controller.addListener(_userScrollListener); // スクロールイベントを監視
+
+    gp.init();
+    gp.addListener(_onProviderUpdate);
+    _controller.addListener(_userScrollListener);
   }
 
   @override
   void dispose() {
-    // リスナーとコントローラーを破棄してメモリリークを防ぐ
     context.read<GalleryProvider>().removeListener(_onProviderUpdate);
     _controller.removeListener(_userScrollListener);
     _controller.dispose();
     super.dispose();
   }
-  
-  /// GalleryProviderの状態が更新されたときに呼び出されるリスナー。
+
+  /// 親ウィジェット(MainScreen)に現在の状態を通知するヘルパーメソッド
+  void _updateParent() {
+    // 選択中のアイテムが1つ以上ある場合のみ、共有・削除アクションを有効にする
+    final bool hasSelection = _selectedIds.isNotEmpty;
+    widget.onSelectionChange?.call(
+      _selectMode,
+      hasSelection ? _onShare : null,
+      hasSelection ? _onDelete : null,
+    );
+  }
+
   void _onProviderUpdate() {
     final gp = context.read<GalleryProvider>();
+    if (gp.loading) return;
 
-    if (gp.loading) return; // データのロード中は処理しない
-
-    // --- 1. 初回レイアウト時の処理 ---
-    // まだ初回レイアウトが完了しておらず、アセットが読み込まれた場合
     if (!_initialLayoutCompleted && gp.assets.isNotEmpty) {
-      // フレームの描画が終わった直後に実行する
       SchedulerBinding.instance.addPostFrameCallback((_) {
         if (mounted && _controller.hasClients) {
-          // 初期スクロールと、必要であれば追加の読み込みを実行
           _performInitialScrollAndLoad();
         }
       });
-    }
-    // --- 2. 古い写真の追加読み込み完了後のスクロール位置補正処理 ---
-    else if (_isLoadingMore) {
-      // フレームの描画が終わった直後に実行する
+    } else if (_isLoadingMore) {
       SchedulerBinding.instance.addPostFrameCallback((_) {
         if (mounted && _controller.hasClients) {
           final newMaxScrollExtent = _controller.position.maxScrollExtent;
-          // 新しく追加されたコンテンツの高さを計算
           final addedHeight = newMaxScrollExtent - _oldMaxScrollExtent;
-          
-          // 現在のスクロール位置に、追加されたコンテンツの高さを加算してジャンプする。
-          // これにより、ユーザーの見ていた位置が維持される。
           _controller.jumpTo(_controller.offset + addedHeight);
         }
       });
-
-      // UIを更新して、ローディングインジケーターを非表示にする
-      setState(() {
-        _isLoadingMore = false;
-      });
+      setState(() => _isLoadingMore = false);
     }
   }
-  
-  /// 初回表示時に、一番下までスクロールし、必要に応じて追加のデータを読み込むメソッド。
+
   void _performInitialScrollAndLoad() {
     final gp = context.read<GalleryProvider>();
     if (!mounted || !_controller.hasClients || gp.loading) return;
 
-    // 一番下（最新の写真）までジャンプ
     _controller.jumpTo(_controller.position.maxScrollExtent);
     
-    // 短い遅延を挟んで再度ジャンプ（初回描画のタイミング問題を回避するため）
     Future.delayed(const Duration(milliseconds: 50), () {
       if (!mounted || !_controller.hasClients) return;
       _controller.jumpTo(_controller.position.maxScrollExtent);
 
-      // スクロールバーが表示されないほど写真が少ない場合、追加読み込みを試みる
       if (_controller.position.maxScrollExtent == 0.0 && gp.hasMore) {
         gp.loadMoreIfNeeded();
       } else {
-        // 初回レイアウト完了フラグを立てる
         if (!_initialLayoutCompleted) {
           setState(() {
             _initialLayoutCompleted = true;
@@ -132,109 +115,94 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
     });
   }
 
-  /// ユーザーのスクロール操作を監視するリスナー。
   void _userScrollListener() {
-    // 条件を満たした場合、古い写真を追加読み込みする
-    if (_shouldLoadMore()) {
-      _loadMorePhotos();
-    }
+    if (_shouldLoadMore()) _loadMorePhotos();
   }
 
-  /// 古い写真を追加読み込みすべきかどうかを判断するメソッド。
-  bool _shouldLoadMore() {
-    return _initialLayoutCompleted && // 初回レイアウトが完了している
-        !_isLoadingMore &&           // 現在読み込み中でない
-        _controller.position.extentBefore < 500.0; // スクロール位置が一番上から500px以内
-  }
+  bool _shouldLoadMore() =>
+      _initialLayoutCompleted &&
+      !_isLoadingMore &&
+      _controller.position.extentBefore < 500.0;
 
-  /// 古い写真の追加読み込みを開始するメソッド。
   void _loadMorePhotos() {
     final gp = context.read<GalleryProvider>();
-    if (!gp.loading) {
-      setState(() {
-        _isLoadingMore = true; // 読み込み中フラグを立てる
-        // 読み込み前のスクロール範囲を保存
-        _oldMaxScrollExtent = _controller.position.maxScrollExtent;
-      });
-      gp.loadMoreIfNeeded(); // Providerに読み込みを依頼
-    }
+    if (gp.loading) return;
+    setState(() {
+      _isLoadingMore = true;
+      _oldMaxScrollExtent = _controller.position.maxScrollExtent;
+    });
+    gp.loadMoreIfNeeded();
   }
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // AutomaticKeepAliveClientMixinのために必要
+    // AutomaticKeepAliveClientMixinを使用するためにsuper.buildを呼び出す
+    super.build(context);
 
     final barBackgroundColor = Theme.of(context).brightness == Brightness.light
         ? Colors.grey.shade100.withAlpha(204)
         : Colors.black.withAlpha(179);
 
-    return Scaffold(
-      // 選択モードに応じて下部バーを切り替える
-      bottomNavigationBar: _selectMode
-          ? _buildSelectModeBottomBar(context)
-          : _buildNormalModeBottomBar(),
-      body: Consumer<GalleryProvider>(
-        builder: (context, gp, child) {
-          // --- 状態に応じたUIの表示 ---
-          if (gp.noAccess) {
-            // アクセスが拒否されている場合
-            return Center(child: TextButton(onPressed: gp.openSetting, child: const Text('写真へのアクセスを許可')));
-          }
-          if (gp.loading && gp.assets.isEmpty) {
-            // 初回読み込み中の場合
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          // --- メインのグリッドビュー ---
-          return CustomScrollView(
-            key: const PageStorageKey('gallery_scroll_view'), // スクロール位置を保持
-            controller: _controller,
-            slivers: [
-              _buildSliverAppBar(barBackgroundColor),
-              // 追加読み込み中のインジケーター
-              if (_isLoadingMore)
-                const SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: _indicatorHeight,
-                    child: Center(child: CircularProgressIndicator()),
-                  ),
+    // MainScreen側でScaffoldを持つため、このウィジェットはコンテンツ本体のみを返す
+    return Consumer<GalleryProvider>(
+      builder: (context, gp, child) {
+        if (gp.noAccess) {
+          return Center(
+              child: TextButton(
+                  onPressed: gp.openSetting,
+                  child: const Text('写真へのアクセスを許可')));
+        }
+        if (gp.loading && gp.assets.isEmpty) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        return CustomScrollView(
+          key: const PageStorageKey('gallery_scroll_view'),
+          controller: _controller,
+          slivers: [
+            _buildSliverAppBar(barBackgroundColor),
+            if (_isLoadingMore)
+              const SliverToBoxAdapter(
+                child: SizedBox(
+                  height: _indicatorHeight,
+                  child: Center(child: CircularProgressIndicator()),
                 ),
-              _buildSliverGrid(gp),
-            ],
-          );
-        },
-      ),
+              ),
+            _buildSliverGrid(gp),
+          ],
+        );
+      },
     );
   }
 
-  /// スクロールと連動する上部アプリバーを構築する。
+  /// スクロールと連動する上部アプリバーを構築する
   SliverAppBar _buildSliverAppBar(Color barBackgroundColor) {
     return SliverAppBar(
-      title: Text(_selectMode ? 'Select Items' : 'All Photos'),
+      // 選択モードに応じてタイトルを変更
+      title: Text(_selectMode ? '${_selectedIds.length}件を選択中' : 'Photos'),
       centerTitle: true,
-      pinned: true,      // 上部に固定
-      floating: true,    // 下スクロールですぐに表示
+      pinned: true,
+      floating: true,
       elevation: 0,
       backgroundColor: barBackgroundColor,
       actions: [
         TextButton(
           onPressed: _toggleSelectMode,
-          child: Text(_selectMode ? 'Cancel' : 'Select'),
+          child: Text(_selectMode ? 'キャンセル' : '選択'),
         ),
       ],
     );
   }
 
-  /// 写真・動画のグリッド部分を構築する。
+  /// 写真・動画のグリッド部分を構築する
   SliverPadding _buildSliverGrid(GalleryProvider gp) {
     return SliverPadding(
       padding: const EdgeInsets.all(1.0),
       sliver: SliverGrid(
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,        // 3列表示
-          mainAxisSpacing: 1,       // 垂直方向の間隔
-          crossAxisSpacing: 1,      // 水平方向の間隔
-          childAspectRatio: 1,        // アスペクト比を1:1に
+          crossAxisCount: 3,
+          mainAxisSpacing: 1,
+          crossAxisSpacing: 1,
+          childAspectRatio: 1,
         ),
         delegate: SliverChildBuilderDelegate(
           (context, index) {
@@ -253,124 +221,98 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
     );
   }
 
-  /// 通常モード時の下部ナビゲーションバーを構築する。
-  Widget _buildNormalModeBottomBar() {
-    return BottomNavigationBar(
-      currentIndex: _bottomNavIndex,
-      onTap: (index) => setState(() => _bottomNavIndex = index),
-      type: BottomNavigationBarType.fixed, // タップされたアイテムをハイライト
-      items: const [
-        BottomNavigationBarItem(icon: Icon(Icons.photo_library), label: 'All Photos'),
-        BottomNavigationBarItem(icon: Icon(Icons.star_outline), label: 'For You'),
-        BottomNavigationBarItem(icon: Icon(Icons.collections_outlined), label: 'Albums'),
-        BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
-      ],
-    );
-  }
-
-  /// 選択モード時の下部アクションバーを構築する。
-  Widget _buildSelectModeBottomBar(BuildContext context) {
-    return BottomAppBar(
-      height: 57.0,
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.share_outlined),
-                tooltip: 'Share',
-                // 選択中のアイテムがなければ無効化
-                onPressed: _selectedIds.isNotEmpty ? _onShare : null,
-              ),
-              IconButton(
-                icon: const Icon(Icons.delete_outline),
-                tooltip: 'Delete',
-                // 選択中のアイテムがなければ無効化
-                onPressed: _selectedIds.isNotEmpty ? _onDelete : null,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// グリッドのアイテムがタップされたときの処理。
   void _onItemTap(AssetEntity asset, bool isSelected) {
     if (_selectMode) {
-      // --- 選択モード中の場合 ---
       setState(() {
         if (isSelected) {
-          _selectedIds.remove(asset.id); // 選択解除
+          _selectedIds.remove(asset.id);
         } else {
-          _selectedIds.add(asset.id);    // 選択
+          _selectedIds.add(asset.id);
         }
       });
+      _updateParent(); // 選択状態が変わったので親に通知
     } else {
-      // --- 通常モードの場合 ---
       final assets = context.read<GalleryProvider>().assets;
-      // ビューワー画面に遷移
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => ViewerScreen(
             assets: assets,
-            initialIndex: assets.indexOf(asset), // タップされた写真のインデックスを渡す
+            initialIndex: assets.indexOf(asset),
           ),
         ),
       );
     }
   }
 
-  /// グリッドのアイテムが長押しされたときの処理。
   void _onItemLongPress(AssetEntity asset) {
     if (!_selectMode) {
-      // 通常モードであれば、選択モードに移行する
       setState(() {
         _selectMode = true;
-        _selectedIds.add(asset.id); // 長押ししたアイテムを選択状態にする
+        _selectedIds.add(asset.id);
       });
+      _updateParent(); // 選択モードに切り替わったので親に通知
     }
   }
 
-  /// 選択モードを切り替える。
   void _toggleSelectMode() {
     setState(() {
       _selectMode = !_selectMode;
       if (!_selectMode) {
-        // 通常モードに戻るときは、選択状態をクリア
         _selectedIds.clear();
       }
     });
+    _updateParent(); // 選択モードが切り替わったので親に通知
   }
 
-  /// 選択したアイテムを削除する処理。
   Future<void> _onDelete() async {
     if (_selectedIds.isEmpty) return;
-    // PhotoManagerに削除を依頼
+    
+    // 削除確認ダイアログを表示
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('${_selectedIds.length}件の項目を削除'),
+        content: const Text('この操作は取り消せません。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text('削除',
+                style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
     await PhotoManager.editor.deleteWithIds(_selectedIds.toList());
     
-    // 削除後のリフレッシュの前に、UIの状態をリセット
+    // UIを通常モードに戻す
     setState(() {
       _selectMode = false;
       _selectedIds.clear();
-      _initialLayoutCompleted = false; // リフレッシュ後に初回スクロールを再度実行するため
+      _initialLayoutCompleted = false;
     });
 
-    // Providerにデータのリフレッシュを依頼
+    _updateParent(); // 状態が変わったので親に通知
     await context.read<GalleryProvider>().refresh();
   }
 
-  /// 選択したアイテムを共有する処理。
   Future<void> _onShare() async {
     if (_selectedIds.isEmpty) return;
-    // 選択されたIDのアセットを取得
-    final assets = context.read<GalleryProvider>().assets.where((a) => _selectedIds.contains(a.id));
-    // アセットからファイルを取得
+
+    final assets = context
+        .read<GalleryProvider>()
+        .assets
+        .where((a) => _selectedIds.contains(a.id));
     final files = await Future.wait(assets.map((a) => a.file));
     final paths = files.where((f) => f != null).map((f) => f!.path).toList();
+
     if (paths.isNotEmpty) {
       // share_plusパッケージを使って共有ダイアログを表示
       final xFiles = paths.map((path) => XFile(path)).toList();

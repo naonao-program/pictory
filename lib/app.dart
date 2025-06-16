@@ -3,6 +3,7 @@ import 'package:pictory/providers/albums_provider.dart';
 import 'package:provider/provider.dart';
 import 'providers/gallery_provider.dart';
 import 'screens/gallery/gallery_screen.dart';
+import 'screens/main_screen.dart';
 
 /// アプリケーションのルート（最上位）ウィジェットです。
 class PictoryApp extends StatelessWidget {
@@ -25,7 +26,7 @@ class PictoryApp extends StatelessWidget {
         theme: ThemeData(useMaterial3: true, brightness: Brightness.light),
         darkTheme: ThemeData(useMaterial3: true, brightness: Brightness.dark),
         // アプリの初期画面としてGalleryScreenを指定
-        home: const GalleryScreen(),
+        home: const MainScreen(),
       ),
     );
   }
