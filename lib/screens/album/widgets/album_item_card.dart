@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
+import 'package:pictory/screens/album/album_detail_screen.dart';
 
 /// GridViewに表示される各アルバムのカードウィジェット
 class AlbumItemCard extends StatefulWidget {
@@ -55,9 +56,10 @@ class _AlbumItemCardState extends State<AlbumItemCard> {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () {
-        // TODO: ここにアルバム詳細画面への遷移処理を実装します
-        // Navigator.of(context).push(MaterialPageRoute(builder: (_) => AlbumDetailScreen(album: widget.album)));
-        print('Tapped on album: ${widget.album.name}');
+        // アルバム詳細画面へ遷移する処理を実装
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => AlbumDetailScreen(album: widget.album),
+        ));
       },
       child: Card(
         clipBehavior: Clip.antiAlias,
