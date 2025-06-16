@@ -36,11 +36,14 @@ class _MainScreenState extends State<MainScreen> {
       GalleryScreen(
         onSelectionChange: (isActive, onShare, onDelete) {
           // GalleryScreenの状態変更を受け取ったら、UIを更新する
-          setState(() {
-            _isGallerySelectMode = isActive;
-            _onShareAction = onShare;
-            _onDeleteAction = onDelete;
-          });
+          // buildメソッドが実行中の更新を防ぐため、安全にsetStateを呼び出す
+          if (mounted) {
+            setState(() {
+              _isGallerySelectMode = isActive;
+              _onShareAction = onShare;
+              _onDeleteAction = onDelete;
+            });
+          }
         },
       ),
       const AlbumsScreen(),
@@ -77,20 +80,32 @@ class _MainScreenState extends State<MainScreen> {
         },
         children: _screens,
       ),
-      // フッターのナビゲーションバー
-      // Photosタブ(_selectedIndex == 0)が選択モードの場合のみ、アクションバーを表示
-      bottomNavigationBar: _isGallerySelectMode && _selectedIndex == 0
-          ? _buildSelectModeActions()
-          : _buildNormalBottomNav(),
+      bottomNavigationBar: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 200), // 短めのアニメ
+        transitionBuilder: (Widget child, Animation<double> anim) {
+          // 上からフェードイン＆縦方向にスライド
+          return SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 1),
+              end: Offset.zero,
+            ).animate(anim),
+            child: FadeTransition(opacity: anim, child: child),
+          );
+        },
+        child: _isGallerySelectMode && _selectedIndex == 0
+            ? _buildSelectModeActions(key: const ValueKey('select'))
+            : _buildNormalBottomNav(key: const ValueKey('normal')),
+      ),
     );
   }
 
-  /// 通常時のBottomNavigationBarを構築する
-  Widget _buildNormalBottomNav() {
+  /// 通常時の BottomNavigationBar
+  Widget _buildNormalBottomNav({Key? key}) {
     return BottomNavigationBar(
+      key: key,
       currentIndex: _selectedIndex,
       onTap: _onItemTapped,
-      items: const <BottomNavigationBarItem>[
+      items: const [
         BottomNavigationBarItem(
           icon: Icon(Icons.photo_library_outlined),
           activeIcon: Icon(Icons.photo_library),
@@ -105,27 +120,38 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  /// 選択モード時のアクションバー（共有・削除）を構築する
-  Widget _buildSelectModeActions() {
-    return BottomAppBar(
-      child: SafeArea(
-        child: Row(
-          // mainAxisAlignmentで両端に寄せる
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.share_outlined),
-              tooltip: 'Share',
-              // 実行するアクションがGalleryScreenから渡されていない場合は無効
-              onPressed: _onShareAction,
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline),
-              tooltip: 'Delete',
-              // 実行するアクションがGalleryScreenから渡されていない場合は無効
-              onPressed: _onDeleteAction,
-            ),
-          ],
+  /// 選択モード時のアクションバー
+  Widget _buildSelectModeActions({Key? key}) {
+    // 通常の BottomNavigationBar と同じ背景色を取得
+    final Color bgColor = Theme.of(context)
+        .bottomNavigationBarTheme
+        .backgroundColor
+      ?? Theme.of(context).bottomAppBarTheme.color
+      ?? Theme.of(context).scaffoldBackgroundColor;
+
+    return SafeArea(
+      key: key,
+      top: false, // 上側の余白はいらない
+      child: SizedBox(
+        height: kBottomNavigationBarHeight,
+        child: BottomAppBar(
+          color: bgColor,
+          elevation: 8,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.share_outlined),
+                tooltip: 'Share',
+                onPressed: _onShareAction,
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline),
+                tooltip: 'Delete',
+                onPressed: _onDeleteAction,
+              ),
+            ],
+          ),
         ),
       ),
     );
