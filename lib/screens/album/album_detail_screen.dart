@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 import 'package:provider/provider.dart';
@@ -7,7 +8,6 @@ import '../../providers/album_detail_provider.dart';
 import '../viewer/viewer_screen.dart';
 
 /// 特定のアルバムに含まれるアセット（写真・動画）の一覧を表示する画面
-/// このウィジェットはProviderの生成に責任を持つ
 class AlbumDetailScreen extends StatelessWidget {
   final AssetPathEntity album;
 
@@ -15,7 +15,6 @@ class AlbumDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // AlbumDetailProviderを生成し、その子ウィジェットである_AlbumDetailViewに提供する
     return ChangeNotifierProvider(
       create: (context) => AlbumDetailProvider(album: album),
       child: const _AlbumDetailView(),
@@ -32,38 +31,80 @@ class _AlbumDetailView extends StatefulWidget {
 }
 
 class __AlbumDetailViewState extends State<_AlbumDetailView> {
+  late final AlbumDetailProvider _provider;
   // 無限スクロールを実現するためのスクロールコントローラー
   final ScrollController _scrollController = ScrollController();
+  bool _initialLayoutCompleted = false;
+  bool _isLoadingMore = false;
+  double _oldMaxScrollExtent = 0.0;
 
   @override
   void initState() {
     super.initState();
-    // initStateの実行時点では、このウィジェットはまだビルドプロセスの最中です。
-    // このタイミングでProviderの状態を変更してnotifyListeners()を呼び出すと、
-    // "dirty" assertionエラーが発生します。
-    // そのため、最初のフレームの描画が完了した直後に処理を実行するようスケジュールします。
+
+    // context.read は initState() で安全に呼べる
+    _provider = context.read<AlbumDetailProvider>();
+    _provider.addListener(_onProviderUpdate);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // このコールバック内では、ウィジェットツリーが安定しているため安全にProviderを呼び出せます。
-      final provider = context.read<AlbumDetailProvider>();
+      _provider.initialize();
+    });
 
-      // 最初のデータを読み込む
-      provider.loadAssets();
-
-      // スクロールコントローラーにリスナーを登録
-      _scrollController.addListener(() {
-        if (_scrollController.position.pixels >=
-            _scrollController.position.maxScrollExtent - 200) {
-          provider.loadMoreAssets();
-        }
-      });
+    _scrollController.addListener(() {
+      if (_initialLayoutCompleted &&
+          !_isLoadingMore &&
+          _scrollController.position.extentBefore < 200.0) {
+        _loadMore();
+      }
     });
   }
 
   @override
   void dispose() {
+    // context を使わず、フィールドから直接 removeListener
+    _provider.removeListener(_onProviderUpdate);
     _scrollController.dispose();
     super.dispose();
   }
+
+  void _loadMore() {
+    if (_provider.loading || !_provider.hasMore) return;
+    setState(() {
+      _isLoadingMore = true;
+      _oldMaxScrollExtent = _scrollController.position.maxScrollExtent;
+    });
+    _provider.loadMoreAssets();
+  }
+
+  void _onProviderUpdate() {
+    if (_provider.loading) return;
+
+    if (_provider.isInitialized &&
+        !_initialLayoutCompleted &&
+        _provider.assets.isNotEmpty) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _scrollController.hasClients) {
+          _scrollController.jumpTo(
+            _scrollController.position.maxScrollExtent,
+          );
+          setState(() {
+            _initialLayoutCompleted = true;
+          });
+        }
+      });
+    } else if (_isLoadingMore) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _scrollController.hasClients) {
+          final newMax = _scrollController.position.maxScrollExtent;
+          _scrollController.jumpTo(
+            _scrollController.offset + (newMax - _oldMaxScrollExtent),
+          );
+        }
+      });
+      setState(() => _isLoadingMore = false);
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -78,8 +119,7 @@ class __AlbumDetailViewState extends State<_AlbumDetailView> {
       ),
       body: Builder(
         builder: (context) {
-          // 初回読み込み中の場合
-          if (assets.isEmpty && provider.loading) {
+          if (!provider.isInitialized && provider.loading) {
             return const Center(child: CircularProgressIndicator());
           }
 
@@ -88,75 +128,78 @@ class __AlbumDetailViewState extends State<_AlbumDetailView> {
             return const Center(child: Text('No photos or videos found.'));
           }
           
-          // GridViewでアセットのサムネイルを一覧表示
-          return GridView.builder(
+          // CustomScrollViewを使って、先頭にインジケーターを追加できるようにする
+          return CustomScrollView(
             controller: _scrollController,
-            padding: const EdgeInsets.all(2.0),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4, // 4列表示
-              crossAxisSpacing: 2.0,
-              mainAxisSpacing: 2.0,
-            ),
-            itemCount: assets.length + (provider.hasMore ? 1 : 0),
-            itemBuilder: (context, index) {
-              // リストの末尾で、まだ読み込めるデータがある場合はインジケータを表示
-              if (index == assets.length) {
-                return const Center(child: Padding(
-                  padding: EdgeInsets.all(8.0),
-                  child: CircularProgressIndicator(strokeWidth: 3),
-                ));
-              }
-
-              final asset = assets[index];
-              return GestureDetector(
-                onTap: () {
-                  // タップされたアセットを全画面ビューワーで表示
-                  Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => ViewerScreen(
-                      assets: assets,
-                      initialIndex: index,
+            slivers: [
+              // さらに読み込み中は、グリッドの先頭にインジケーターを表示
+              if (_isLoadingMore)
+                const SliverToBoxAdapter(
+                    child: SizedBox(
+                        height: 60,
+                        child: Center(child: CircularProgressIndicator())
                     ),
-                  ));
-                },
-                child: Hero(
-                  tag: asset.id, // スムーズな画面遷移アニメーションのためのHeroタグ
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      // サムネイル画像
-                      AssetEntityImage(
-                        asset,
-                        isOriginal: false,
-                        // サムネイルの解像度を少し下げて、読み込みの負荷を軽減します。
-                        thumbnailSize: const ThumbnailSize.square(200),
-                        // --- 修正箇所ここまで ---
-                        fit: BoxFit.cover,
-                      ),
-                      // アセットが動画の場合、左下にアイコンと再生時間を表示
-                      if (asset.type == AssetType.video)
-                        Positioned(
-                          bottom: 4,
-                          left: 4,
-                          child: Row(
+                ),
+              SliverPadding(
+                padding: const EdgeInsets.all(2.0),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 4,
+                    crossAxisSpacing: 2.0,
+                    mainAxisSpacing: 2.0,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final asset = assets[index];
+                      return GestureDetector(
+                        onTap: () {
+                          Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => ViewerScreen(
+                              assets: assets,
+                              initialIndex: index,
+                            ),
+                          ));
+                        },
+                        child: Hero(
+                          tag: asset.id,
+                          child: Stack(
+                            fit: StackFit.expand,
                             children: [
-                              const Icon(Icons.videocam, color: Colors.white, size: 16),
-                              const SizedBox(width: 4),
-                              Text(
-                                _formatDuration(asset.duration),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  shadows: [Shadow(blurRadius: 1.0, color: Colors.black54)],
+                              AssetEntityImage(
+                                asset,
+                                isOriginal: false,
+                                thumbnailSize: const ThumbnailSize.square(200),
+                                fit: BoxFit.cover,
+                              ),
+                              if (asset.type == AssetType.video)
+                                Positioned(
+                                  bottom: 4,
+                                  left: 4,
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.videocam, color: Colors.white, size: 16),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        _formatDuration(asset.duration),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          shadows: [Shadow(blurRadius: 1.0, color: Colors.black54)],
+                                        ),
+                                      )
+                                    ],
+                                  ),
                                 ),
-                              )
                             ],
                           ),
                         ),
-                    ],
+                      );
+                    },
+                    childCount: assets.length,
                   ),
                 ),
-              );
-            },
+              ),
+            ],
           );
         },
       ),
