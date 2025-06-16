@@ -117,9 +117,18 @@ class GalleryProvider extends ChangeNotifier {
   /// [reset]がtrueの場合、既存のアセットをクリアして最新ページから読み込み直します（リフレッシュ処理）。
   Future<void> _loadPage({bool reset = false}) async {
     if (_loading) return; // 二重読み込みを防止
+
+    if (reset) {
+      _assets.clear(); // 既存のリストをクリア
+      _hasMore = true; // 読み込みフラグをリセット
+      // _currentPageはrefreshメソッドやinitメソッドで設定される
+    }
+    
+    // 読み込むべきページがない場合は、これ以上データがないと判断
     if (_allPhotosPath == null || _currentPage == null || _currentPage! < 0) {
       // 読み込むべきページがない場合
       _hasMore = false;
+      if(reset) notifyListeners(); // resetの場合は状態を通知
       return;
     }
 
@@ -129,12 +138,6 @@ class GalleryProvider extends ChangeNotifier {
       notifyListeners();
     }
 
-    if (reset) {
-      _assets.clear(); // 既存のリストをクリア
-      _hasMore = true;   // 読み込みフラグをリセット
-      _currentPage = _lastPageIndex; // 最新ページから読み直す
-    }
-
     final int pageToLoad = _currentPage!;
     // 指定したページのAssetEntityのリストを取得
     final List<AssetEntity> pageList = await _allPhotosPath!.getAssetListPaged(
@@ -142,7 +145,6 @@ class GalleryProvider extends ChangeNotifier {
       size: _pageSize,
     );
 
-    _loading = false;
 
     if (reset) {
       // リフレッシュの場合は、取得したリストをそのままセット
@@ -159,13 +161,49 @@ class GalleryProvider extends ChangeNotifier {
 
     // 次に読み込むべきページのインデックスを更新
     _currentPage = pageToLoad - 1;
+    _loading = false;
   }
 
   /// アセットリストを強制的にリフレッシュするメソッド。
   /// （例: アセットの削除後など）
   Future<void> refresh() async {
-    if (_allPhotosPath == null || _lastPageIndex == null) return;
+    // 読み込み中の多重実行を防止
+    if (_loading) return;
+    _loading = true;
+    // リフレッシュ開始をUIに伝える（ローディング表示のため）
+    notifyListeners();
+
+    // "すべての写真"アルバムの情報がない場合は、状態をクリアして終了
+    if (_allPhotosPath == null) {
+      _assets.clear();
+      _hasMore = false;
+      _loading = false;
+      notifyListeners();
+      return;
+    }
+
+    // 1. 最新の総アセット数を再取得する
+    final int totalCount = await _allPhotosPath!.assetCountAsync;
+
+    if (totalCount == 0) {
+      // アセットが0件になった場合、状態を完全にクリア
+      _assets.clear();
+      _hasMore = false;
+      _lastPageIndex = null;
+      _currentPage = null;
+    } else {
+      // 2. ページネーション情報を再計算する
+      final int pageCount = (totalCount / _pageSize).ceil();
+      _lastPageIndex = pageCount - 1;
+      // 3. 最新のページから読み直すためにカレントページをセットする
+      _currentPage = _lastPageIndex;
+    }
+
+    // 4. _loadPageを呼び出してアセットリストをリセット＆再読み込み
+    //    更新されたページ情報に基づき、reset:trueで最新ページを読み込む
     await _loadPage(reset: true);
+    
+    _loading = false;
     notifyListeners();
   }
 }
