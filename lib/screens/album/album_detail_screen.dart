@@ -96,6 +96,7 @@ class __AlbumDetailViewState extends State<_AlbumDetailView> {
       SchedulerBinding.instance.addPostFrameCallback((_) {
         if (mounted && _scrollController.hasClients) {
           final newMax = _scrollController.position.maxScrollExtent;
+          // 先頭に要素が追加された分だけスクロール位置を下にずらす
           _scrollController.jumpTo(
             _scrollController.offset + (newMax - _oldMaxScrollExtent),
           );
