@@ -38,7 +38,7 @@ class AlbumDetailProvider with ChangeNotifier {
         orders: [
           const OrderOption(
             type: OrderOptionType.createDate,
-            asc: true, // ★★★ 修正点: true (昇順、古い→新しい) にする
+            asc: true, // true (昇順、古い→新しい) にする
           ),
         ],
       ),
@@ -81,7 +81,7 @@ class AlbumDetailProvider with ChangeNotifier {
   /// さらに古いアセットを読み込む
   Future<void> loadMoreAssets() async {
     if (_loading || !_hasMore) return;
-    // ★★★ 修正点: UIに読み込み中を伝えるため、先にnotifyする
+    // UIに読み込み中を伝えるため、先にnotifyする
     _loading = true;
     notifyListeners();
     await _loadPage();
@@ -111,7 +111,7 @@ class AlbumDetailProvider with ChangeNotifier {
           ..clear()
           ..addAll(newAssets);
       } else {
-        // ★★★ 修正点: 既存リストの「先頭」に挿入して古い写真を追加
+        // 既存リストの「先頭」に挿入して古い写真を追加
         _assets.insertAll(0, newAssets);
       }
 
@@ -119,7 +119,7 @@ class AlbumDetailProvider with ChangeNotifier {
       if (pageToLoad == 0) {
         _hasMore = false;
       }
-      // ★★★ 修正点: 次に読み込むページをデクリメント
+      // 次に読み込むページをデクリメント
       _currentPage = pageToLoad - 1;
     } catch (e) {
       debugPrint('Failed to load assets page: $e');
