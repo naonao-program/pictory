@@ -32,12 +32,13 @@ class AlbumDetailProvider with ChangeNotifier {
     notifyListeners();
 
     // 1. アルバムにソート条件（新しい順）を設定
+    // UI側でリストを反転させて「古いものが上」を実現するため、データは新しい順で取得します。
     final AssetPathEntity? sorted = await album.fetchPathProperties(
       filterOptionGroup: FilterOptionGroup(
         orders: [
           const OrderOption(
             type: OrderOptionType.createDate,
-            asc: false, // false に変更 (降順、新しい→古い)
+            asc: false, // false (降順、新しい→古い) に設定します
           ),
         ],
       ),

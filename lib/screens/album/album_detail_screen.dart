@@ -46,7 +46,8 @@ class __AlbumDetailViewState extends State<_AlbumDetailView> {
     });
 
     _scrollController.addListener(() {
-      // スクロールが「末尾」に近づいたら古いデータを読み込む
+      // スクロール位置が一番上(maxScrollExtent)に近づいたら、さらに古いデータを読み込む
+      // reverse: true の場合、リストの見た目上の一番上がスクロールの終点になります。
       if (!_provider.loading &&
           _provider.hasMore &&
           _scrollController.position.pixels >=
@@ -66,6 +67,7 @@ class __AlbumDetailViewState extends State<_AlbumDetailView> {
   Widget build(BuildContext context) {
     // watchを使ってProviderの状態変更を監視し、変更があればUIを再構築する
     final provider = context.watch<AlbumDetailProvider>();
+    // MODIFIED: Providerから取得したリスト（新しい順）をそのまま使用します
     final assets = provider.assets;
 
     return Scaffold(
@@ -83,14 +85,17 @@ class __AlbumDetailViewState extends State<_AlbumDetailView> {
           if (assets.isEmpty) {
             return const Center(child: Text('No photos or videos found.'));
           }
-          
-          // CustomScrollViewを使って、先頭にインジケーターを追加できるようにする
+
+          // MODIFIED: CustomScrollViewに `shrinkWrap: true` を追加します。
+          // これにより、コンテンツの高さがスクロールビューの高さとなり、
+          // 写真が少ない場合でも不要な余白が発生しなくなります。
           return CustomScrollView(
+            shrinkWrap: true,
             reverse: true,
             controller: _scrollController,
             slivers: [
-              // スクロール末尾（見た目上は一番下）にインジケーターを表示
-              if (provider.loading && assets.isNotEmpty)
+              // ローディングインジケーターをリストの末尾（見た目上は一番上）に配置
+              if (provider.loading && provider.hasMore)
                 const SliverToBoxAdapter(
                   child: SizedBox(
                     height: 60,
@@ -107,9 +112,12 @@ class __AlbumDetailViewState extends State<_AlbumDetailView> {
                   ),
                   delegate: SliverChildBuilderDelegate(
                     (context, index) {
+                      // Providerからのリスト（新しい順）をそのまま使用します。
+                      // reverse:true のおかげで、リストの0番目（最新）が一番下に表示されます。
                       final asset = assets[index];
                       return GestureDetector(
                         onTap: () {
+                          // ViewerScreenにはそのままのリストとインデックスを渡す
                           Navigator.of(context).push(MaterialPageRoute(
                             builder: (_) => ViewerScreen(
                               assets: assets,
@@ -134,14 +142,19 @@ class __AlbumDetailViewState extends State<_AlbumDetailView> {
                                   left: 4,
                                   child: Row(
                                     children: [
-                                      const Icon(Icons.videocam, color: Colors.white, size: 16),
+                                      const Icon(Icons.videocam,
+                                          color: Colors.white, size: 16),
                                       const SizedBox(width: 4),
                                       Text(
                                         _formatDuration(asset.duration),
                                         style: const TextStyle(
                                           color: Colors.white,
                                           fontSize: 12,
-                                          shadows: [Shadow(blurRadius: 1.0, color: Colors.black54)],
+                                          shadows: [
+                                            Shadow(
+                                                blurRadius: 1.0,
+                                                color: Colors.black54)
+                                          ],
                                         ),
                                       )
                                     ],

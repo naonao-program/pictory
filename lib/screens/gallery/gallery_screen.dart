@@ -97,11 +97,17 @@ class _GalleryScreenState extends State<GalleryScreen>
     final gp = context.read<GalleryProvider>();
     if (!mounted || !_controller.hasClients || gp.loading) return;
 
-    _controller.jumpTo(_controller.position.maxScrollExtent);
+    // コンテンツが画面に収まらない場合のみ一番下にスクロールする
+    if (_controller.position.maxScrollExtent > 0.0) {
+      _controller.jumpTo(_controller.position.maxScrollExtent);
+    }
     
     Future.delayed(const Duration(milliseconds: 50), () {
       if (!mounted || !_controller.hasClients) return;
-      _controller.jumpTo(_controller.position.maxScrollExtent);
+      // レイアウト計算後に再度チェックし、スクロール可能なら一番下に移動
+      if (_controller.position.maxScrollExtent > 0.0) {
+        _controller.jumpTo(_controller.position.maxScrollExtent);
+      }
 
       if (_controller.position.maxScrollExtent == 0.0 && gp.hasMore) {
         gp.loadMoreIfNeeded();
@@ -119,7 +125,9 @@ class _GalleryScreenState extends State<GalleryScreen>
     if (_shouldLoadMore()) _loadMorePhotos();
   }
 
+  // これ以上読み込むデータがない場合は、追加読み込みを試みないようにする
   bool _shouldLoadMore() =>
+      context.read<GalleryProvider>().hasMore &&
       _initialLayoutCompleted &&
       !_isLoadingMore &&
       _controller.position.extentBefore < 500.0;
@@ -160,7 +168,9 @@ class _GalleryScreenState extends State<GalleryScreen>
           controller: _controller,
           slivers: [
             _buildSliverAppBar(barBackgroundColor),
-            if (_isLoadingMore)
+            // _isLoadingMore は hasMore が false になると更新されない可能性があるため、
+            // provider の hasMore フラグも合わせて確認することで、不要なインジケーター表示を防ぐ
+            if (_isLoadingMore && gp.hasMore)
               const SliverToBoxAdapter(
                 child: SizedBox(
                   height: _indicatorHeight,
