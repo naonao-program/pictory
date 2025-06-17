@@ -20,6 +20,25 @@ class AlbumDetailProvider with ChangeNotifier {
   int _currentPage = 0; // 常に0ページ目から開始
   bool _hasMore = true;
 
+  // Providerが破棄されたかどうかを追跡するフラグ
+  bool _isDisposed = false;
+
+  /// 安全にリスナーに通知するためのラッパーメソッド
+  void _safeNotifyListeners() {
+    // 破棄されていなければ通知する
+    if (!_isDisposed) {
+      notifyListeners();
+    }
+  }
+
+  @override
+  void dispose() {
+    _isDisposed = true; // 破棄されたことを記録
+    super.dispose();
+  }
+  // --- End: Error fix ---
+
+
   List<AssetEntity> get assets => _assets;
   bool get loading => _loading;
   bool get hasMore => _hasMore;
@@ -29,10 +48,8 @@ class AlbumDetailProvider with ChangeNotifier {
   Future<void> initialize() async {
     if (_isInitialized) return;
     _loading = true;
-    notifyListeners();
+    _safeNotifyListeners();
 
-    // 1. アルバムにソート条件（新しい順）を設定
-    // UI側でリストを反転させて「古いものが上」を実現するため、データは新しい順で取得します。
     final AssetPathEntity? sorted = await album.fetchPathProperties(
       filterOptionGroup: FilterOptionGroup(
         orders: [
@@ -48,7 +65,7 @@ class AlbumDetailProvider with ChangeNotifier {
       _hasMore = false;
       _isInitialized = true;
       _loading = false;
-      notifyListeners();
+      _safeNotifyListeners();
       debugPrint('アルバム情報の取得に失敗しました');
       return;
     }
@@ -59,7 +76,7 @@ class AlbumDetailProvider with ChangeNotifier {
 
     _isInitialized = true;
     _loading = false;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   /// さらに古いアセットを読み込む
@@ -67,12 +84,12 @@ class AlbumDetailProvider with ChangeNotifier {
     if (_loading || !_hasMore) return;
     // UIに読み込み中を伝えるため、先にnotifyする
     _loading = true;
-    notifyListeners(); // UIにインジケーター表示を通知
+    _safeNotifyListeners();
 
     await _loadPage();
 
     _loading = false;
-    notifyListeners(); // 読み込み完了を通知
+    _safeNotifyListeners();
   }
 
   /// ページ単位でアセットを読み込む内部メソッド
