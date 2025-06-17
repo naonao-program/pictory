@@ -34,78 +34,33 @@ class __AlbumDetailViewState extends State<_AlbumDetailView> {
   late final AlbumDetailProvider _provider;
   // 無限スクロールを実現するためのスクロールコントローラー
   final ScrollController _scrollController = ScrollController();
-  bool _initialLayoutCompleted = false;
-  bool _isLoadingMore = false;
-  double _oldMaxScrollExtent = 0.0;
 
   @override
   void initState() {
     super.initState();
 
-    // context.read は initState() で安全に呼べる
     _provider = context.read<AlbumDetailProvider>();
-    _provider.addListener(_onProviderUpdate);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _provider.initialize();
     });
 
     _scrollController.addListener(() {
-      if (_initialLayoutCompleted &&
-          !_isLoadingMore &&
-          _scrollController.position.extentBefore < 200.0) {
-        _loadMore();
+      // スクロールが「末尾」に近づいたら古いデータを読み込む
+      if (!_provider.loading &&
+          _provider.hasMore &&
+          _scrollController.position.pixels >=
+              _scrollController.position.maxScrollExtent - 500.0) {
+        _provider.loadMoreAssets();
       }
     });
   }
 
   @override
   void dispose() {
-    // context を使わず、フィールドから直接 removeListener
-    _provider.removeListener(_onProviderUpdate);
     _scrollController.dispose();
     super.dispose();
   }
-
-  void _loadMore() {
-    if (_provider.loading || !_provider.hasMore) return;
-    setState(() {
-      _isLoadingMore = true;
-      _oldMaxScrollExtent = _scrollController.position.maxScrollExtent;
-    });
-    _provider.loadMoreAssets();
-  }
-
-  void _onProviderUpdate() {
-    if (_provider.loading) return;
-
-    if (_provider.isInitialized &&
-        !_initialLayoutCompleted &&
-        _provider.assets.isNotEmpty) {
-      SchedulerBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _scrollController.hasClients) {
-          _scrollController.jumpTo(
-            _scrollController.position.maxScrollExtent,
-          );
-          setState(() {
-            _initialLayoutCompleted = true;
-          });
-        }
-      });
-    } else if (_isLoadingMore) {
-      SchedulerBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _scrollController.hasClients) {
-          final newMax = _scrollController.position.maxScrollExtent;
-          // 先頭に要素が追加された分だけスクロール位置を下にずらす
-          _scrollController.jumpTo(
-            _scrollController.offset + (newMax - _oldMaxScrollExtent),
-          );
-        }
-      });
-      setState(() => _isLoadingMore = false);
-    }
-  }
-
 
   @override
   Widget build(BuildContext context) {
@@ -131,15 +86,16 @@ class __AlbumDetailViewState extends State<_AlbumDetailView> {
           
           // CustomScrollViewを使って、先頭にインジケーターを追加できるようにする
           return CustomScrollView(
+            reverse: true,
             controller: _scrollController,
             slivers: [
-              // さらに読み込み中は、グリッドの先頭にインジケーターを表示
-              if (_isLoadingMore)
+              // スクロール末尾（見た目上は一番下）にインジケーターを表示
+              if (provider.loading && assets.isNotEmpty)
                 const SliverToBoxAdapter(
-                    child: SizedBox(
-                        height: 60,
-                        child: Center(child: CircularProgressIndicator())
-                    ),
+                  child: SizedBox(
+                    height: 60,
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
                 ),
               SliverPadding(
                 padding: const EdgeInsets.all(2.0),
