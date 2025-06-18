@@ -27,10 +27,10 @@ class _AlbumDetailView extends StatefulWidget {
   const _AlbumDetailView();
 
   @override
-  State<_AlbumDetailView> createState() => __AlbumDetailViewState();
+  State<_AlbumDetailView> createState() => _AlbumDetailViewState();
 }
 
-class __AlbumDetailViewState extends State<_AlbumDetailView> {
+class _AlbumDetailViewState extends State<_AlbumDetailView> {
   late final AlbumDetailProvider _provider;
   // 無限スクロールを実現するためのスクロールコントローラー
   final ScrollController _scrollController = ScrollController();
