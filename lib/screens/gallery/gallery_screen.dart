@@ -104,7 +104,7 @@ class _GalleryScreenState extends State<GalleryScreen>
     
     Future.delayed(const Duration(milliseconds: 50), () {
       if (!mounted || !_controller.hasClients) return;
-      // レイアウト計算後に再度チェックし、スクロール可能なら一番下に移動
+      // レイアウト計算後に再度チェックし、スクロール可能なら一番下に移動lib/screens/viewer/widgets/info_sheet.dart:1:8
       if (_controller.position.maxScrollExtent > 0.0) {
         _controller.jumpTo(_controller.position.maxScrollExtent);
       }
