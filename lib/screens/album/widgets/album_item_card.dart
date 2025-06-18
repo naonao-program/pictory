@@ -23,6 +23,9 @@ class _AlbumItemCardState extends State<AlbumItemCard> {
   // アルバム内のアセット数
   int _assetCount = 0;
 
+  // サムネイルの解像度
+  static const ThumbnailSize _cardThumbnailSize = ThumbnailSize(250, 250);
+
   @override
   void initState() {
     super.initState();
@@ -40,7 +43,7 @@ class _AlbumItemCardState extends State<AlbumItemCard> {
 
     // 取得したアセットのサムネイルデータを取得
     final thumbnailData = await assets.first.thumbnailDataWithSize(
-      const ThumbnailSize(250, 250), // サムネイルの解像度を指定
+      _cardThumbnailSize, // サムネイルの解像度
     );
 
     // ウィジェットがまだ画面に存在すれば、状態を更新して再描画

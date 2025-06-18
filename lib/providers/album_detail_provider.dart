@@ -15,6 +15,7 @@ class AlbumDetailProvider with ChangeNotifier {
   List<AssetEntity> _assets = [];
   bool _loading = false;
   bool _isInitialized = false;
+  String? _errorMessage; // エラーメッセージを保持する変数を追加
 
   final int _pageSize = 100;
   int _currentPage = 0; // 常に0ページ目から開始
@@ -36,18 +37,19 @@ class AlbumDetailProvider with ChangeNotifier {
     _isDisposed = true; // 破棄されたことを記録
     super.dispose();
   }
-  // --- End: Error fix ---
 
 
   List<AssetEntity> get assets => _assets;
   bool get loading => _loading;
   bool get hasMore => _hasMore;
   bool get isInitialized => _isInitialized;
+  String? get errorMessage => _errorMessage;
 
   /// Providerを初期化し、アセットを「新しい順」にソートして最初のページを読み込む
   Future<void> initialize() async {
     if (_isInitialized) return;
     _loading = true;
+    _errorMessage = null;
     _safeNotifyListeners();
 
     final AssetPathEntity? sorted = await album.fetchPathProperties(
@@ -62,11 +64,12 @@ class AlbumDetailProvider with ChangeNotifier {
     );
 
     if (sorted == null) {
+      // エラーメッセージを設定 ---
       _hasMore = false;
       _isInitialized = true;
       _loading = false;
       _safeNotifyListeners();
-      debugPrint('アルバム情報の取得に失敗しました');
+      _errorMessage = 'アルバム情報の取得に失敗しました。';
       return;
     }
     _sortedAlbum = sorted;
@@ -121,6 +124,7 @@ class AlbumDetailProvider with ChangeNotifier {
       _currentPage++;
 
     } catch (e) {
+      _errorMessage = 'アセットの読み込みに失敗しました。';
       debugPrint('Failed to load assets page: $e');
       _hasMore = false;
     }

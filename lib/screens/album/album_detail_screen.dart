@@ -34,6 +34,8 @@ class __AlbumDetailViewState extends State<_AlbumDetailView> {
   late final AlbumDetailProvider _provider;
   // 無限スクロールを実現するためのスクロールコントローラー
   final ScrollController _scrollController = ScrollController();
+  // 読み込みが始まるscrollの位置
+  static const double _loadMoreScrollOffset = 500.0;
 
   @override
   void initState() {
@@ -51,7 +53,7 @@ class __AlbumDetailViewState extends State<_AlbumDetailView> {
       if (!_provider.loading &&
           _provider.hasMore &&
           _scrollController.position.pixels >=
-              _scrollController.position.maxScrollExtent - 500.0) {
+              _scrollController.position.maxScrollExtent - _loadMoreScrollOffset) {
         _provider.loadMoreAssets();
       }
     });

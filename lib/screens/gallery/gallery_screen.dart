@@ -125,12 +125,15 @@ class _GalleryScreenState extends State<GalleryScreen>
     if (_shouldLoadMore()) _loadMorePhotos();
   }
 
+  // 　読み込みする位置
+  static const double _loadMoreExtentThreshold = 500.0;
+
   // これ以上読み込むデータがない場合は、追加読み込みを試みないようにする
   bool _shouldLoadMore() =>
       context.read<GalleryProvider>().hasMore &&
       _initialLayoutCompleted &&
       !_isLoadingMore &&
-      _controller.position.extentBefore < 500.0;
+      _controller.position.extentBefore < _loadMoreExtentThreshold;
 
   void _loadMorePhotos() {
     final gp = context.read<GalleryProvider>();
