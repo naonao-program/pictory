@@ -34,11 +34,18 @@ class AlbumsProvider extends ChangeNotifier {
     );
 
     // アセットが1件も含まれていない空のアルバムを除外する
+    // final List<AssetPathEntity> filteredAlbums = [];
+    // for (final path in paths) {
+    //   final count = await path.assetCountAsync;
+    //   if (count > 0) {
+    //     filteredAlbums.add(path);
+    //   }
+    // }
+    final counts = await Future.wait(paths.map((path) => path.assetCountAsync));
     final List<AssetPathEntity> filteredAlbums = [];
-    for (final path in paths) {
-      final count = await path.assetCountAsync;
-      if (count > 0) {
-        filteredAlbums.add(path);
+    for (int i = 0; i < paths.length; i++) {
+      if (counts[i] > 0) {
+        filteredAlbums.add(paths[i]);
       }
     }
     
