@@ -47,6 +47,9 @@ class _ViewerScreenState extends State<ViewerScreen> {
   /// ページが切り替わるたびにインクリメントされます。
   int _videoSession = 0;
 
+  /// 情報シートを表示するためのスワイプ開始位置を記録する変数。
+  Offset? _dragStartPosition;
+
   @override
   void initState() {
     super.initState();
@@ -187,11 +190,27 @@ class _ViewerScreenState extends State<ViewerScreen> {
           VerticalDragGestureRecognizer: GestureRecognizerFactoryWithHandlers<VerticalDragGestureRecognizer>(
             () => VerticalDragGestureRecognizer(),
             (VerticalDragGestureRecognizer instance) {
+              instance.onStart = (details) {
+                // ドラッグ開始位置を記録
+                _dragStartPosition = details.globalPosition;
+              };
               instance.onEnd = (details) {
-                // 上方向へのスワイプ（負の速度）を検知した場合に情報シートを表示
-                if (details.primaryVelocity != null && details.primaryVelocity! < -300) {
+                if (_dragStartPosition == null) return;
+
+                // 垂直方向の移動距離を計算
+                final dy = details.globalPosition.dy - _dragStartPosition!.dy;
+                // 指を離した瞬間の垂直方向の速度を取得
+                final primaryVelocity = details.primaryVelocity ?? 0.0;
+
+                // 【判定条件】
+                // 1. 速いスワイプ (従来通り速度で判定)
+                // 2. または、ゆっくりでも50ピクセル以上上にスワイプされた場合 (移動距離で判定)
+                if (primaryVelocity < -250 || dy < -50) {
                   _showInfoSheet();
                 }
+                
+                // 開始位置をリセット
+                _dragStartPosition = null;
               };
             },
           ),
