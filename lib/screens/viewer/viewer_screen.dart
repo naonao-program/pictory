@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
@@ -180,61 +181,76 @@ class _ViewerScreenState extends State<ViewerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          PageView.builder(
-            controller: _pageController,
-            itemCount: widget.assets.length,
-            onPageChanged: _onPageChanged,
-            itemBuilder: (context, index) {
-              final asset = widget.assets[index];
-              
-              if (asset.type == AssetType.video) {
-                // --- 動画アセットの場合 ---
-                // 現在表示中のページで、かつ動画コントローラーが準備完了している場合
-                if (index == _currentIndex && _videoController != null && _initializeVideoPlayerFuture != null) {
-                  return VideoViewerView(
-                    key: ValueKey(asset.id), // アセットIDをキーに設定し、ウィジェットの再利用を正しく制御
-                    onToggleUI: _toggleUI,
-                    controller: _videoController!,
-                    initializeFuture: _initializeVideoPlayerFuture!,
-                  );
-                } else {
-                  // 動画の読み込み中はサムネイルを表示
-                  return Center(
-                    child: AssetEntityImage(
-                      asset,
-                      isOriginal: false, // サムネイル品質
-                      thumbnailSize: const ThumbnailSize.square(500),
-                      fit: BoxFit.contain,
-                    ),
-                  );
+      body: RawGestureDetector(
+        gestures: <Type, GestureRecognizerFactory>{
+          // PageViewの水平スクロールと共存させるため、垂直方向のドラッグのみをリッスンする
+          VerticalDragGestureRecognizer: GestureRecognizerFactoryWithHandlers<VerticalDragGestureRecognizer>(
+            () => VerticalDragGestureRecognizer(),
+            (VerticalDragGestureRecognizer instance) {
+              instance.onEnd = (details) {
+                // 上方向へのスワイプ（負の速度）を検知した場合に情報シートを表示
+                if (details.primaryVelocity != null && details.primaryVelocity! < -300) {
+                  _showInfoSheet();
                 }
-              } else {
-                // --- 写真アセットの場合 ---
-                return PhotoViewerView(
-                  asset: asset,
-                  onToggleUI: _toggleUI,
-                );
-              }
+              };
             },
           ),
-          // リストの範囲外のインデックスを参照しないようにチェック
-          if (_currentIndex < widget.assets.length) ...[
-            // --- 上下のUIバー ---
-            ViewerAppBar(
-              show: _showUI,
-              asset: currentAsset,
-              onBackPressed: () => Navigator.of(context).pop(),
+        },
+        child: Stack(
+          children: [
+            PageView.builder(
+              controller: _pageController,
+              itemCount: widget.assets.length,
+              onPageChanged: _onPageChanged,
+              itemBuilder: (context, index) {
+                final asset = widget.assets[index];
+                
+                if (asset.type == AssetType.video) {
+                  // --- 動画アセットの場合 ---
+                  if (index == _currentIndex && _videoController != null && _initializeVideoPlayerFuture != null) {
+                    return VideoViewerView(
+                      key: ValueKey(asset.id),
+                      onToggleUI: _toggleUI,
+                      controller: _videoController!,
+                      initializeFuture: _initializeVideoPlayerFuture!,
+                    );
+                  } else {
+                    // 動画の読み込み中はサムネイルを表示
+                    return Center(
+                      child: AssetEntityImage(
+                        asset,
+                        isOriginal: false,
+                        thumbnailSize: const ThumbnailSize.square(500),
+                        fit: BoxFit.contain,
+                      ),
+                    );
+                  }
+                } else {
+                  // --- 写真アセットの場合 ---
+                  return PhotoViewerView(
+                    asset: asset,
+                    onToggleUI: _toggleUI,
+                  );
+                }
+              },
             ),
-            ViewerBottomBar(
-              show: _showUI,
-              asset: currentAsset,
-              onDelete: _onDelete,
-              onShowInfo: _showInfoSheet,
-            ),
-          ]
-        ],
+            // リストの範囲外のインデックスを参照しないようにチェック
+            if (_currentIndex < widget.assets.length) ...[
+              // --- 上下のUIバー ---
+              ViewerAppBar(
+                show: _showUI,
+                asset: currentAsset,
+                onBackPressed: () => Navigator.of(context).pop(),
+              ),
+              ViewerBottomBar(
+                show: _showUI,
+                asset: currentAsset,
+                onDelete: _onDelete,
+                onShowInfo: _showInfoSheet,
+              ),
+            ]
+          ],
+        ),
       ),
     );
   }
