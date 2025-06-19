@@ -166,6 +166,16 @@ class _ViewerScreenState extends State<ViewerScreen> {
     }
   }
 
+  /// 情報シートを表示するためのヘルパーメソッド
+  void _showInfoSheet() {
+    // アセットが動画の場合のみ、videoControllerを渡す
+    InfoSheet.show(
+      context, 
+      currentAsset, 
+      videoController: currentAsset.type == AssetType.video ? _videoController : null,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -221,7 +231,7 @@ class _ViewerScreenState extends State<ViewerScreen> {
               show: _showUI,
               asset: currentAsset,
               onDelete: _onDelete,
-              onShowInfo: () => InfoSheet.show(context, currentAsset), // 情報シートを表示
+              onShowInfo: _showInfoSheet,
             ),
           ]
         ],
