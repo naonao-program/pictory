@@ -185,8 +185,6 @@ class _InfoSheetState extends State<InfoSheet> {
     final hasCameraInfo = (make != null && make.isNotEmpty) || (model != null && model.isNotEmpty);
 
     final fNumberStr = exif['EXIF FNumber']?.printable;
-    // F値のデバッグ情報を出力
-    debugPrint('FNumber raw: $fNumberStr');
     
     // F値を適切にフォーマット
     String? fNumber;

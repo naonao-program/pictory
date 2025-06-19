@@ -50,6 +50,10 @@ class _ViewerScreenState extends State<ViewerScreen> {
   /// 情報シートを表示するためのスワイプ開始位置を記録する変数。
   Offset? _dragStartPosition;
 
+  /// スワイプ判定の閾値 -250 (速度) と -50 (移動距離)
+  static const double _kMinSwipeVelocityThreshold = -250.0;
+  static const double _kMinSwipeDistanceThreshold = -50.0;
+
   @override
   void initState() {
     super.initState();
@@ -195,7 +199,7 @@ class _ViewerScreenState extends State<ViewerScreen> {
     // 【判定条件】
     // 1. 速いスワイプ (速度で判定)
     // 2. または、ゆっくりでも50ピクセル以上上にスワイプされた場合 (移動距離で判定)
-    if (primaryVelocity < -250 || dy < -50) {
+    if (primaryVelocity < _kMinSwipeVelocityThreshold || dy < _kMinSwipeDistanceThreshold) {
       _showInfoSheet();
     }
     
