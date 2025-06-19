@@ -86,8 +86,8 @@ class _InfoSheetState extends State<InfoSheet> {
     if (widget.asset.type == AssetType.image) {
       exifData = await _getExifData(widget.asset);
     } else if (widget.asset.type == AssetType.video) {
-      final durationMs = widget.asset.duration;
-      videoDuration = durationMs > 0 ? Duration(milliseconds: durationMs) : null;
+      final durationInSeconds = widget.asset.duration; // asset.duration は秒単位です
+      videoDuration = durationInSeconds > 0 ? Duration(seconds: durationInSeconds) : null;
     }
     
     return AssetInfoData(
