@@ -180,96 +180,94 @@ class _ViewerScreenState extends State<ViewerScreen> {
     );
   }
 
+  // ドラッグ開始時に呼び出される
+  void _onVerticalDragStart(DragStartDetails details) {
+    _dragStartPosition = details.globalPosition;
+  }
+
+  // ドラッグ終了時に呼び出される
+  void _onVerticalDragEnd(DragEndDetails details) {
+    if (_dragStartPosition == null) return;
+
+    final dy = details.globalPosition.dy - _dragStartPosition!.dy;
+    final primaryVelocity = details.primaryVelocity ?? 0.0;
+
+    // 【判定条件】
+    // 1. 速いスワイプ (速度で判定)
+    // 2. または、ゆっくりでも50ピクセル以上上にスワイプされた場合 (移動距離で判定)
+    if (primaryVelocity < -250 || dy < -50) {
+      _showInfoSheet();
+    }
+    
+    // 開始位置をリセット
+    _dragStartPosition = null;
+  }
+
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: RawGestureDetector(
-        gestures: <Type, GestureRecognizerFactory>{
-          // PageViewの水平スクロールと共存させるため、垂直方向のドラッグのみをリッスンする
-          VerticalDragGestureRecognizer: GestureRecognizerFactoryWithHandlers<VerticalDragGestureRecognizer>(
-            () => VerticalDragGestureRecognizer(),
-            (VerticalDragGestureRecognizer instance) {
-              instance.onStart = (details) {
-                // ドラッグ開始位置を記録
-                _dragStartPosition = details.globalPosition;
-              };
-              instance.onEnd = (details) {
-                if (_dragStartPosition == null) return;
-
-                // 垂直方向の移動距離を計算
-                final dy = details.globalPosition.dy - _dragStartPosition!.dy;
-                // 指を離した瞬間の垂直方向の速度を取得
-                final primaryVelocity = details.primaryVelocity ?? 0.0;
-
-                // 【判定条件】
-                // 1. 速いスワイプ (従来通り速度で判定)
-                // 2. または、ゆっくりでも50ピクセル以上上にスワイプされた場合 (移動距離で判定)
-                if (primaryVelocity < -250 || dy < -50) {
-                  _showInfoSheet();
-                }
-                
-                // 開始位置をリセット
-                _dragStartPosition = null;
-              };
-            },
-          ),
-        },
-        child: Stack(
-          children: [
-            PageView.builder(
-              controller: _pageController,
-              itemCount: widget.assets.length,
-              onPageChanged: _onPageChanged,
-              itemBuilder: (context, index) {
-                final asset = widget.assets[index];
-                
-                if (asset.type == AssetType.video) {
-                  // --- 動画アセットの場合 ---
-                  if (index == _currentIndex && _videoController != null && _initializeVideoPlayerFuture != null) {
-                    return VideoViewerView(
-                      key: ValueKey(asset.id),
-                      onToggleUI: _toggleUI,
-                      controller: _videoController!,
-                      initializeFuture: _initializeVideoPlayerFuture!,
-                    );
-                  } else {
-                    // 動画の読み込み中はサムネイルを表示
-                    return Center(
-                      child: AssetEntityImage(
-                        asset,
-                        isOriginal: false,
-                        thumbnailSize: const ThumbnailSize.square(500),
-                        fit: BoxFit.contain,
-                      ),
-                    );
-                  }
-                } else {
-                  // --- 写真アセットの場合 ---
-                  return PhotoViewerView(
-                    asset: asset,
+      body: Stack( // RawGestureDetectorを削除し、直接Stackで子ウィジェットを配置
+        children: [
+          PageView.builder(
+            controller: _pageController,
+            itemCount: widget.assets.length,
+            onPageChanged: _onPageChanged,
+            itemBuilder: (context, index) {
+              final asset = widget.assets[index];
+              
+              if (asset.type == AssetType.video) {
+                // --- 動画アセットの場合 ---
+                if (index == _currentIndex && _videoController != null && _initializeVideoPlayerFuture != null) {
+                  return VideoViewerView(
+                    key: ValueKey(asset.id),
                     onToggleUI: _toggleUI,
+                    controller: _videoController!,
+                    initializeFuture: _initializeVideoPlayerFuture!,
+                    // 垂直ドラッグイベントを渡す
+                    onVerticalDragStart: _onVerticalDragStart,
+                    onVerticalDragEnd: _onVerticalDragEnd,
+                  );
+                } else {
+                  // 動画の読み込み中はサムネイルを表示
+                  return Center(
+                    child: AssetEntityImage(
+                      asset,
+                      isOriginal: false,
+                      thumbnailSize: const ThumbnailSize.square(500),
+                      fit: BoxFit.contain,
+                    ),
                   );
                 }
-              },
+              } else {
+                // --- 写真アセットの場合 ---
+                return PhotoViewerView(
+                  asset: asset,
+                  onToggleUI: _toggleUI,
+                  // 垂直ドラッグイベントを渡す
+                  onVerticalDragStart: _onVerticalDragStart,
+                  onVerticalDragEnd: _onVerticalDragEnd,
+                );
+              }
+            },
+          ),
+          // リストの範囲外のインデックスを参照しないようにチェック
+          if (_currentIndex < widget.assets.length) ...[
+            // --- 上下のUIバー ---
+            ViewerAppBar(
+              show: _showUI,
+              asset: currentAsset,
+              onBackPressed: () => Navigator.of(context).pop(),
             ),
-            // リストの範囲外のインデックスを参照しないようにチェック
-            if (_currentIndex < widget.assets.length) ...[
-              // --- 上下のUIバー ---
-              ViewerAppBar(
-                show: _showUI,
-                asset: currentAsset,
-                onBackPressed: () => Navigator.of(context).pop(),
-              ),
-              ViewerBottomBar(
-                show: _showUI,
-                asset: currentAsset,
-                onDelete: _onDelete,
-                onShowInfo: _showInfoSheet,
-              ),
-            ]
-          ],
-        ),
+            ViewerBottomBar(
+              show: _showUI,
+              asset: currentAsset,
+              onDelete: _onDelete,
+              onShowInfo: _showInfoSheet,
+            ),
+          ]
+        ],
       ),
     );
   }
