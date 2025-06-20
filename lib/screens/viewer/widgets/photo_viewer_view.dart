@@ -7,11 +7,17 @@ class PhotoViewerView extends StatefulWidget {
   final AssetEntity asset;
   // UIの表示/非表示を切り替えるためのコールバック関数
   final VoidCallback onToggleUI;
+  // 垂直ドラッグ開始時に呼び出されるコールバック
+  final GestureDragStartCallback? onVerticalDragStart;
+  // 垂直ドラッグ終了時に呼び出されるコールバック
+  final GestureDragEndCallback? onVerticalDragEnd;
 
   const PhotoViewerView({
     super.key, 
     required this.asset,
     required this.onToggleUI,
+    this.onVerticalDragStart,
+    this.onVerticalDragEnd,
   });
 
   @override
@@ -89,7 +95,7 @@ class _PhotoViewerViewState extends State<PhotoViewerView> with SingleTickerProv
 
   @override
   Widget build(BuildContext context) {
-    // GestureDetectorでラップし、タップ操作を検知できるようにする
+    // GestureDetectorでラップし、タップ操作と垂直スワイプを検知できるようにする
     return GestureDetector(
       onTap: widget.onToggleUI, // シングルタップでUIの表示/非表示を切り替え
       onDoubleTapDown: (details) {
@@ -97,6 +103,12 @@ class _PhotoViewerViewState extends State<PhotoViewerView> with SingleTickerProv
         _doubleTapLocalPosition = details.localPosition;
       },
       onDoubleTap: _onDoubleTap, // ダブルタップでズーム処理を実行
+      onVerticalDragStart: (details) {
+        widget.onVerticalDragStart?.call(details); // 親にイベントを渡す
+      },
+      onVerticalDragEnd: (details) {
+        widget.onVerticalDragEnd?.call(details); // 親にイベントを渡す
+      },
       child: InteractiveViewer(
         transformationController: _transformationController, // ズーム状態をコントローラーで管理
         minScale: 1.0,      // 最小スケール

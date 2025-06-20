@@ -5,12 +5,18 @@ class VideoViewerView extends StatefulWidget {
   final VoidCallback onToggleUI;
   final VideoPlayerController controller;
   final Future<void> initializeFuture;
+  // 垂直ドラッグ開始時に呼び出されるコールバック
+  final GestureDragStartCallback? onVerticalDragStart;
+  // 垂直ドラッグ終了時に呼び出されるコールバック
+  final GestureDragEndCallback? onVerticalDragEnd;
 
   const VideoViewerView({
     super.key,
     required this.onToggleUI,
     required this.controller,
     required this.initializeFuture,
+    this.onVerticalDragStart,
+    this.onVerticalDragEnd,
   });
 
   @override
@@ -101,12 +107,19 @@ class _VideoViewerViewState extends State<VideoViewerView> with SingleTickerProv
         return Stack(
           alignment: Alignment.center,
           children: [
+            // GestureDetectorでラップし、タップ操作と垂直スワイプを検知できるようにする
             GestureDetector(
               onTap: widget.onToggleUI,
               onDoubleTapDown: (details) {
                 _doubleTapLocalPosition = details.localPosition;
               },
               onDoubleTap: _onDoubleTap,
+              onVerticalDragStart: (details) {
+                widget.onVerticalDragStart?.call(details); // 親にイベントを渡す
+              },
+              onVerticalDragEnd: (details) {
+                widget.onVerticalDragEnd?.call(details); // 親にイベントを渡す
+              },
               child: Container(
                 color: Colors.transparent,
                 child: InteractiveViewer(

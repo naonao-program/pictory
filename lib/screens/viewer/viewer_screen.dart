@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
@@ -45,6 +46,13 @@ class _ViewerScreenState extends State<ViewerScreen> {
   /// 素早いスワイプによる動画初期化処理の競合を防ぐためのセッションID。
   /// ページが切り替わるたびにインクリメントされます。
   int _videoSession = 0;
+
+  /// 情報シートを表示するためのスワイプ開始位置を記録する変数。
+  Offset? _dragStartPosition;
+
+  /// スワイプ判定の閾値 -250 (速度) と -50 (移動距離)
+  static const double _kMinSwipeVelocityThreshold = -250.0;
+  static const double _kMinSwipeDistanceThreshold = -50.0;
 
   @override
   void initState() {
@@ -166,11 +174,45 @@ class _ViewerScreenState extends State<ViewerScreen> {
     }
   }
 
+  /// 情報シートを表示するためのヘルパーメソッド
+  void _showInfoSheet() {
+    // アセットが動画の場合のみ、videoControllerを渡す
+    InfoSheet.show(
+      context, 
+      currentAsset, 
+      videoController: currentAsset.type == AssetType.video ? _videoController : null,
+    );
+  }
+
+  // ドラッグ開始時に呼び出される
+  void _onVerticalDragStart(DragStartDetails details) {
+    _dragStartPosition = details.globalPosition;
+  }
+
+  // ドラッグ終了時に呼び出される
+  void _onVerticalDragEnd(DragEndDetails details) {
+    if (_dragStartPosition == null) return;
+
+    final dy = details.globalPosition.dy - _dragStartPosition!.dy;
+    final primaryVelocity = details.primaryVelocity ?? 0.0;
+
+    // 【判定条件】
+    // 1. 速いスワイプ (速度で判定)
+    // 2. または、ゆっくりでも50ピクセル以上上にスワイプされた場合 (移動距離で判定)
+    if (primaryVelocity < _kMinSwipeVelocityThreshold || dy < _kMinSwipeDistanceThreshold) {
+      _showInfoSheet();
+    }
+    
+    // 開始位置をリセット
+    _dragStartPosition = null;
+  }
+
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
+      body: Stack( // RawGestureDetectorを削除し、直接Stackで子ウィジェットを配置
         children: [
           PageView.builder(
             controller: _pageController,
@@ -181,20 +223,22 @@ class _ViewerScreenState extends State<ViewerScreen> {
               
               if (asset.type == AssetType.video) {
                 // --- 動画アセットの場合 ---
-                // 現在表示中のページで、かつ動画コントローラーが準備完了している場合
                 if (index == _currentIndex && _videoController != null && _initializeVideoPlayerFuture != null) {
                   return VideoViewerView(
-                    key: ValueKey(asset.id), // アセットIDをキーに設定し、ウィジェットの再利用を正しく制御
+                    key: ValueKey(asset.id),
                     onToggleUI: _toggleUI,
                     controller: _videoController!,
                     initializeFuture: _initializeVideoPlayerFuture!,
+                    // 垂直ドラッグイベントを渡す
+                    onVerticalDragStart: _onVerticalDragStart,
+                    onVerticalDragEnd: _onVerticalDragEnd,
                   );
                 } else {
                   // 動画の読み込み中はサムネイルを表示
                   return Center(
                     child: AssetEntityImage(
                       asset,
-                      isOriginal: false, // サムネイル品質
+                      isOriginal: false,
                       thumbnailSize: const ThumbnailSize.square(500),
                       fit: BoxFit.contain,
                     ),
@@ -205,6 +249,9 @@ class _ViewerScreenState extends State<ViewerScreen> {
                 return PhotoViewerView(
                   asset: asset,
                   onToggleUI: _toggleUI,
+                  // 垂直ドラッグイベントを渡す
+                  onVerticalDragStart: _onVerticalDragStart,
+                  onVerticalDragEnd: _onVerticalDragEnd,
                 );
               }
             },
@@ -221,7 +268,7 @@ class _ViewerScreenState extends State<ViewerScreen> {
               show: _showUI,
               asset: currentAsset,
               onDelete: _onDelete,
-              onShowInfo: () => InfoSheet.show(context, currentAsset), // 情報シートを表示
+              onShowInfo: _showInfoSheet,
             ),
           ]
         ],
