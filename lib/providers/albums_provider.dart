@@ -37,12 +37,10 @@ class AlbumsProvider extends ChangeNotifier {
       final counts = await Future.wait(paths.map((path) => path.assetCountAsync));
 
       // アセットが1件以上含まれるアルバムのみをフィルタリング
-      final List<AssetPathEntity> filteredAlbums = [];
-      for (int i = 0; i < paths.length; i++) {
-        if (counts[i] > 0) {
-          filteredAlbums.add(paths[i]);
-        }
-      }
+      final filteredAlbums = <AssetPathEntity>[
+        for (int i = 0; i < paths.length; i++)
+          if (counts[i] > 0) paths[i],
+      ];
 
       _albums = filteredAlbums;
     } finally {

@@ -37,7 +37,9 @@ class _GalleryScreenState extends State<GalleryScreen>
   // --- 定数 ---
   static const int _gridCrossAxisCount = 3;
   static const double _loadMoreScrollThreshold = 500.0;
-  static const double _loadingIndicatorHeight = 56.0;
+
+  // Providerのリスナーを保持するための変数
+  VoidCallback? _galleryProviderListener;
 
   // タブが非表示になってもStateを破棄しないようにするための設定
   @override
@@ -54,16 +56,33 @@ class _GalleryScreenState extends State<GalleryScreen>
     // スクロールリスナーを設定
     _controller.addListener(_userScrollListener);
 
-    // 初回レイアウト完了後にスクロール位置を調整
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      _initialScroll();
-    });
+    // 初回データ読み込み完了後にスクロール位置を調整するためのリスナーを設定
+    _galleryProviderListener = () {
+      if (!gp.loading && gp.assets.isNotEmpty) {
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _controller.hasClients) {
+            // コンテンツが画面に収まらない場合のみ一番下にスクロールする
+            if (_controller.position.maxScrollExtent > 0.0) {
+              _controller.jumpTo(_controller.position.maxScrollExtent);
+            }
+          }
+        });
+        // 目的を達成したのでリスナーを解除
+        gp.removeListener(_galleryProviderListener!);
+        _galleryProviderListener = null; // リスナーを解除したことを示す
+      }
+    };
+    gp.addListener(_galleryProviderListener!);
   }
 
   @override
   void dispose() {
     _controller.removeListener(_userScrollListener);
     _controller.dispose();
+    // リスナーが登録されている場合は解除
+    if (_galleryProviderListener != null) {
+      context.read<GalleryProvider>().removeListener(_galleryProviderListener!);
+    }
     super.dispose();
   }
 
@@ -141,7 +160,7 @@ class _GalleryScreenState extends State<GalleryScreen>
             if (gp.loading && gp.assets.isNotEmpty)
               const SliverToBoxAdapter(
                 child: SizedBox(
-                  height: _loadingIndicatorHeight,
+                  height: kBottomNavigationBarHeight,
                   child: Center(child: CircularProgressIndicator()),
                 ),
               ),

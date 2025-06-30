@@ -124,6 +124,8 @@ class GalleryProvider extends ChangeNotifier {
         _hasMore = false;
         _lastPageIndex = null;
         _nextPageToLoad = null;
+        return;
+        return;
       } else {
         // 2. ページネーション情報を再計算する
         final int pageCount = (totalCount / _pageSize).ceil();
