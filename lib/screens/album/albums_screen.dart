@@ -12,14 +12,15 @@ class AlbumsScreen extends StatefulWidget {
 }
 
 class _AlbumsScreenState extends State<AlbumsScreen> {
+  // --- 定数 ---
+  static const int _gridCrossAxisCount = 2;
+  static const double _gridSpacing = 8.0;
+
   @override
   void initState() {
     super.initState();
-    // 画面のビルドが完了した直後にアルバムデータを読み込む
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // readを使い、Providerのメソッドを一度だけ呼び出す
-      context.read<AlbumsProvider>().loadAlbums();
-    });
+    // initState内で直接Providerのメソッドを呼び出す
+    context.read<AlbumsProvider>().loadAlbums();
   }
 
   @override
@@ -45,11 +46,11 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
 
           // GridViewでアルバムをタイル表示
           return GridView.builder(
-            padding: const EdgeInsets.all(8.0),
+            padding: const EdgeInsets.all(_gridSpacing),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2, // 2列で表示
-              crossAxisSpacing: 8.0,
-              mainAxisSpacing: 8.0,
+              crossAxisCount: _gridCrossAxisCount,
+              crossAxisSpacing: _gridSpacing,
+              mainAxisSpacing: _gridSpacing,
             ),
             itemCount: albums.length,
             itemBuilder: (context, index) {

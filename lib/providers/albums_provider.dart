@@ -19,38 +19,38 @@ class AlbumsProvider extends ChangeNotifier {
   /// デバイスからアルバム一覧を非同期に読み込むメソッド。
   Future<void> loadAlbums() async {
     // 既に読み込み済みの場合は再読み込みしない
-    if (_albums.isNotEmpty) return;
+    if (_albums.isNotEmpty || _loading) return;
 
     // 写真ライブラリへのアクセス権限を確認
     final ps = await PhotoManager.requestPermissionExtend();
     if (!ps.isAuth) return;
 
-    _loading = true;
-    notifyListeners();
+    try {
+      _setLoading(true);
 
-    // 画像と動画が含まれるすべてのアルバム（AssetPathEntity）を取得
-    final List<AssetPathEntity> paths = await PhotoManager.getAssetPathList(
-      type: RequestType.common,
-    );
+      // 画像と動画が含まれるすべてのアルバム（AssetPathEntity）を取得
+      final List<AssetPathEntity> paths = await PhotoManager.getAssetPathList(
+        type: RequestType.common,
+      );
 
-    // アセットが1件も含まれていない空のアルバムを除外する
-    // final List<AssetPathEntity> filteredAlbums = [];
-    // for (final path in paths) {
-    //   final count = await path.assetCountAsync;
-    //   if (count > 0) {
-    //     filteredAlbums.add(path);
-    //   }
-    // }
-    final counts = await Future.wait(paths.map((path) => path.assetCountAsync));
-    final List<AssetPathEntity> filteredAlbums = [];
-    for (int i = 0; i < paths.length; i++) {
-      if (counts[i] > 0) {
-        filteredAlbums.add(paths[i]);
-      }
+      // 各アルバムのアセット数を並行して取得
+      final counts = await Future.wait(paths.map((path) => path.assetCountAsync));
+
+      // アセットが1件以上含まれるアルバムのみをフィルタリング
+      final filteredAlbums = <AssetPathEntity>[
+        for (int i = 0; i < paths.length; i++)
+          if (counts[i] > 0) paths[i],
+      ];
+
+      _albums = filteredAlbums;
+    } finally {
+      _setLoading(false);
     }
-    
-    _albums = filteredAlbums;
-    _loading = false;
+  }
+
+  /// ローディング状態を設定し、リスナーに通知するヘルパーメソッド。
+  void _setLoading(bool loading) {
+    _loading = loading;
     notifyListeners();
   }
 }
