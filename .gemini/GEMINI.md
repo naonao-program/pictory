@@ -13,3 +13,5 @@ Posts a code review in Japanese language.
 `.gemini/PROGRESS.md`
 
 どんな処理なのかわかるように、コメントアウトはつけてください
+
+マジックナンバーは避けてください。

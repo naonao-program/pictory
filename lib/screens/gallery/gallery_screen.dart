@@ -34,6 +34,11 @@ class _GalleryScreenState extends State<GalleryScreen>
   bool _selectMode = false;
   final Set<String> _selectedIds = {};
 
+  // --- 定数 ---
+  static const int _gridCrossAxisCount = 3;
+  static const double _loadMoreScrollThreshold = 500.0;
+  static const double _loadingIndicatorHeight = 56.0;
+
   // タブが非表示になってもStateを破棄しないようにするための設定
   @override
   bool get wantKeepAlive => true;
@@ -101,7 +106,7 @@ class _GalleryScreenState extends State<GalleryScreen>
     // 読み込み中でない、かつ、これ以上読み込むデータがある場合
     if (!gp.loading &&
         gp.hasMore &&
-        _controller.position.extentBefore < 500) {
+        _controller.position.extentBefore < _loadMoreScrollThreshold) {
       gp.loadMoreIfNeeded();
     }
   }
@@ -136,7 +141,7 @@ class _GalleryScreenState extends State<GalleryScreen>
             if (gp.loading && gp.assets.isNotEmpty)
               const SliverToBoxAdapter(
                 child: SizedBox(
-                  height: 56.0, // インジケーターの高さ
+                  height: _loadingIndicatorHeight,
                   child: Center(child: CircularProgressIndicator()),
                 ),
               ),
@@ -172,7 +177,7 @@ class _GalleryScreenState extends State<GalleryScreen>
       padding: const EdgeInsets.all(1.0),
       sliver: SliverGrid(
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
+          crossAxisCount: _gridCrossAxisCount,
           mainAxisSpacing: 1,
           crossAxisSpacing: 1,
           childAspectRatio: 1,
