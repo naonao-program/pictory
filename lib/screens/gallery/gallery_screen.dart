@@ -33,10 +33,6 @@ class _GalleryScreenState extends State<GalleryScreen>
   final ScrollController _controller = ScrollController();
   bool _selectMode = false;
   final Set<String> _selectedIds = {};
-  bool _initialLayoutCompleted = false;
-  bool _isLoadingMore = false;
-  double _oldMaxScrollExtent = 0.0;
-  static const double _indicatorHeight = 56.0;
 
   // タブが非表示になってもStateを破棄しないようにするための設定
   @override
@@ -47,14 +43,20 @@ class _GalleryScreenState extends State<GalleryScreen>
     super.initState();
     final gp = context.read<GalleryProvider>();
 
+    // 初期化処理を呼び出す
     gp.init();
-    gp.addListener(_onProviderUpdate);
+
+    // スクロールリスナーを設定
     _controller.addListener(_userScrollListener);
+
+    // 初回レイアウト完了後にスクロール位置を調整
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _initialScroll();
+    });
   }
 
   @override
   void dispose() {
-    context.read<GalleryProvider>().removeListener(_onProviderUpdate);
     _controller.removeListener(_userScrollListener);
     _controller.dispose();
     super.dispose();
@@ -71,78 +73,37 @@ class _GalleryScreenState extends State<GalleryScreen>
     );
   }
 
-  void _onProviderUpdate() {
+  /// 初回読み込み完了後に、リストの最下部にスクロールする。
+  void _initialScroll() {
     final gp = context.read<GalleryProvider>();
-    if (gp.loading) return;
-
-    if (!_initialLayoutCompleted && gp.assets.isNotEmpty) {
-      SchedulerBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _controller.hasClients) {
-          _performInitialScrollAndLoad();
-        }
-      });
-    } else if (_isLoadingMore) {
-      SchedulerBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _controller.hasClients) {
-          final newMaxScrollExtent = _controller.position.maxScrollExtent;
-          final addedHeight = newMaxScrollExtent - _oldMaxScrollExtent;
-          _controller.jumpTo(_controller.offset + addedHeight);
-        }
-      });
-      setState(() => _isLoadingMore = false);
+    // Providerの更新を監視し、初回データ読み込み完了後に一度だけ実行
+    void listener() {
+      if (!gp.loading && gp.assets.isNotEmpty) {
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _controller.hasClients) {
+            // コンテンツが画面に収まらない場合のみ一番下にスクロールする
+            if (_controller.position.maxScrollExtent > 0.0) {
+              _controller.jumpTo(_controller.position.maxScrollExtent);
+            }
+          }
+        });
+        // 目的を達成したのでリスナーを解除
+        gp.removeListener(listener);
+      }
     }
+
+    gp.addListener(listener);
   }
 
-  void _performInitialScrollAndLoad() {
-    final gp = context.read<GalleryProvider>();
-    if (!mounted || !_controller.hasClients || gp.loading) return;
-
-    // コンテンツが画面に収まらない場合のみ一番下にスクロールする
-    if (_controller.position.maxScrollExtent > 0.0) {
-      _controller.jumpTo(_controller.position.maxScrollExtent);
-    }
-    
-    Future.delayed(const Duration(milliseconds: 50), () {
-      if (!mounted || !_controller.hasClients) return;
-      // レイアウト計算後に再度チェックし、スクロール可能なら一番下に移動
-      if (_controller.position.maxScrollExtent > 0.0) {
-        _controller.jumpTo(_controller.position.maxScrollExtent);
-      }
-
-      if (_controller.position.maxScrollExtent == 0.0 && gp.hasMore) {
-        gp.loadMoreIfNeeded();
-      } else {
-        if (!_initialLayoutCompleted) {
-          setState(() {
-            _initialLayoutCompleted = true;
-          });
-        }
-      }
-    });
-  }
-
+  /// ユーザーのスクロール操作を監視し、必要であれば追加のデータを読み込む。
   void _userScrollListener() {
-    if (_shouldLoadMore()) _loadMorePhotos();
-  }
-
-  // 　読み込みする位置
-  static const double _loadMoreExtentThreshold = 500.0;
-
-  // これ以上読み込むデータがない場合は、追加読み込みを試みないようにする
-  bool _shouldLoadMore() =>
-      context.read<GalleryProvider>().hasMore &&
-      _initialLayoutCompleted &&
-      !_isLoadingMore &&
-      _controller.position.extentBefore < _loadMoreExtentThreshold;
-
-  void _loadMorePhotos() {
     final gp = context.read<GalleryProvider>();
-    if (gp.loading) return;
-    setState(() {
-      _isLoadingMore = true;
-      _oldMaxScrollExtent = _controller.position.maxScrollExtent;
-    });
-    gp.loadMoreIfNeeded();
+    // 読み込み中でない、かつ、これ以上読み込むデータがある場合
+    if (!gp.loading &&
+        gp.hasMore &&
+        _controller.position.extentBefore < 500) {
+      gp.loadMoreIfNeeded();
+    }
   }
 
   @override
@@ -171,12 +132,11 @@ class _GalleryScreenState extends State<GalleryScreen>
           controller: _controller,
           slivers: [
             _buildSliverAppBar(barBackgroundColor),
-            // _isLoadingMore は hasMore が false になると更新されない可能性があるため、
-            // provider の hasMore フラグも合わせて確認することで、不要なインジケーター表示を防ぐ
-            if (_isLoadingMore && gp.hasMore)
+            // プロバイダーのローディング状態に応じてインジケーターを表示
+            if (gp.loading && gp.assets.isNotEmpty)
               const SliverToBoxAdapter(
                 child: SizedBox(
-                  height: _indicatorHeight,
+                  height: 56.0, // インジケーターの高さ
                   child: Center(child: CircularProgressIndicator()),
                 ),
               ),
@@ -280,7 +240,7 @@ class _GalleryScreenState extends State<GalleryScreen>
 
   Future<void> _onDelete() async {
     if (_selectedIds.isEmpty) return;
-    
+
     // 削除確認ダイアログを表示
     final confirmed = await showDialog<bool>(
       context: context,
@@ -304,12 +264,11 @@ class _GalleryScreenState extends State<GalleryScreen>
     if (confirmed != true) return;
 
     await PhotoManager.editor.deleteWithIds(_selectedIds.toList());
-    
+
     // UIを通常モードに戻す
     setState(() {
       _selectMode = false;
       _selectedIds.clear();
-      _initialLayoutCompleted = false;
     });
 
     _updateParent(); // 状態が変わったので親に通知

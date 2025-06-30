@@ -15,11 +15,8 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
   @override
   void initState() {
     super.initState();
-    // 画面のビルドが完了した直後にアルバムデータを読み込む
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // readを使い、Providerのメソッドを一度だけ呼び出す
-      context.read<AlbumsProvider>().loadAlbums();
-    });
+    // initState内で直接Providerのメソッドを呼び出す
+    context.read<AlbumsProvider>().loadAlbums();
   }
 
   @override
